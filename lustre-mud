@@ -1,6 +1,12 @@
 #!/usr/bin/bash
 
 set -e
+set -x
+
+PDSH="pdsh -t2 -u60"
+NBD_SIZE="30G"
+#DRYRUN="echo"
+DRYRUN=""
 
 ## Principles of operation
 # 1. Work in stages; Altmgmt, then Primgmt, then Sample, then mds, then oss
@@ -25,6 +31,16 @@ set -e
 ## unstandby sample-node
 ################################
 
+if ! nodeattr pacemaker ; then
+	echo "$0: only for use on Lustre clusters" >&2
+	exit 1
+fi
+
+if [ -z $(nodeattr -q mds) ] ; then
+	echo "$0: only for use on Lustre clusters" >&2
+	exit 1
+fi
+
 if ! nodeattr primgmt ; then
 	echo "$0: must be run from primgmt" >&2
 	exit 1
@@ -37,8 +53,6 @@ fi
 
 desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
 desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
-PDSH="pdsh -t2 -u30"
-DRYRUN="echo"
 
 function actual_toss_version {
 	local node=$1
@@ -157,11 +171,11 @@ function update_mgmt_node {
 	fi
 }
 
-function reboot_mgmt_node {
+function reboot_node {
 	local node=$1
 
 	if [ -z "$node" ]; then
-		echo "$0: reboot_mgmt_node: missing argument node" >&2
+		echo "$0: reboot_node: missing argument node" >&2
 		exit 2
 	fi
 
@@ -170,7 +184,9 @@ function reboot_mgmt_node {
 		${PDSH} -w e${node} $DRYRUN pcs cluster kill
 	fi
 
-	${PDSH} -w e${node} $DRYRUN umount -a -l nfs
+	if nodeattr $node mgmt ; then
+		${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
+	fi
 	$DRYRUN ${PDSH} -w e${node} 'echo b | tee /proc/sysrq-trigger'
 }
 
@@ -235,20 +251,20 @@ function update_mgmt_nodes {
 	fi
 
 	for gender in altmgmt primgmt; do
-		echo "Checking $gender nodes"
+		echo "$0: Checking $gender nodes"
 
 		node=$(nodeattr -q $gender)
 		if [ -n "$node" ]; then
 			toss_update_required=$(want_toss_update e${node} ${desired_toss})
 			if [ $toss_update_required = "yes" ]; then
-				echo $node: $gender toss_update $toss_update_required from $(actual_toss_version e${node}) to $desired_toss
+				echo $0: $node: $gender toss_update $toss_update_required from $(actual_toss_version e${node}) to $desired_toss
 				update_mgmt_node e$node ${desired_toss}
 			fi
 
 			reboot_required=$(want_reboot e${node} ${desired_kernel})
 			if [ $reboot_required = "yes" ]; then
 				echo $node: $gender reboot $reboot_required from $(running_kernel e${node}) to $desired_kernel
-				reboot_mgmt_node $node
+				reboot_node $node
 				wait_for_hostlist_up $node 300
 			fi
 		else
@@ -257,49 +273,225 @@ function update_mgmt_nodes {
 	done
 }
 
+function get_image_name {
+	local iscsi_image_count=$(nodeattr -V iscsi | sort -u | wc -l)
+	if [ $iscsi_image_count -ne 1 ]; then
+		echo "$0: create_image: script only handles clusters with 1 iscsi image" >&2
+		exit 2
+	fi
+
+	nodeattr -V iscsi | head -n1
+}
+
+function verify_image {
+	local desired_toss=$1
+
+	if [ -z "$desired_toss" ]; then
+		echo "$0: verify_image: missing argument desired_toss" >&2
+		exit 2
+	fi
+
+	local image_name=$(get_image_name)
+	local image_ready="no"
+
+	if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
+		echo "$0: verify_image: image $image_name already loopback mounted; umount and retry" >&2
+		exit 2
+	fi
+
+	local image_path=/tftpboot/images/${image_name}.x86_64.latest
+
+	if [ -f $image_path ]; then
+		local real_image_name=$(basename $(realpath $image_path))
+		local mount_path=/mnt/$image_name
+		local mounted=""
+
+		mkdir -p $mount_path
+		if mount -o loop,ro $image_path $mount_path; then
+			mounted=yes
+			local image_version=$(chroot $mount_path distro_version | sed 's/toss //')
+			if [ $image_version = $desired_toss ]; then
+				local image_diff=$(chroot $mount_path distro_diff | wc -l)
+				if [ $image_diff -lt 30 ]; then
+					if [ -f /tftpboot/images/.$real_image_name ]; then
+						image_ready="yes"
+					fi
+				fi
+			fi
+		fi
+		if [ "$mounted" = "yes" ]; then
+			umount $mount_path
+		fi
+	fi
+
+	echo $image_ready
+}
+
+function create_image {
+	local desired_toss=$1
+
+	if [ -z "$desired_toss" ]; then
+		echo "$0: create_image: missing argument desired_toss" >&2
+		exit 2
+	fi
+
+	if [ $(arch) != "x86_64" ]; then
+		echo "$0: create_image: script untested with arch $(arch)" >&2
+		exit 2
+	fi
+
+	echo $0: create_image: creating image version $desired_toss
+	local image_name=$(get_image_name)
+
+	local lustre_group="lustre_2.10"
+	nodeattr lustre212 && lustre_group="lustre_2.12"
+	nodeattr lustre28 && lustre_group="lustre_2.8"
+
+	$DRYRUN create_yum_image -i ${image_name} -b ${NBD_SIZE} base netroot $(arch) ${lustre_group}
+	$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
+
+	if [ -z "$DRYRUN" -a $(verify_image $desired) = "no" ]; then
+		echo "$0: create_image: failed to validate new image" >&2
+		exit 2
+	fi
+}
+
+function update_firmware {
+	echo $0: update_firmware: updating firmware with ib_burn_fw
+	$DRYRUN $PDSH -f 128 -Av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
+	$DRYRUN $PDSH -f 128 -Av /sbin/ib_burn_fw
+	$DRYRUN $PDSH -f 128 -Av -X cfhost umount /usr/share/ib_firmware
+}
+
+# Wait until the specified host(s) have no pools imported
+# timeout is in seconds
+function wait_for_zpools_exported {
+	local hostlist=$1
+	local timeout=$2
+
+	if [ -z "$hostlist" ]; then
+		echo "$0: wait_for_hostlist_up: missing argument hostlist" >&2
+		exit 2
+	fi
+
+	if [ -z "$timeout" ]; then
+		echo "$0: wait_for_hostlist_up: missing argument timeout" >&2
+		exit 2
+	fi
+
+	local start=$(date +%s)
+	local end=$((start + timeout))
+
+	local pools_exported=""
+	while [ $(date +%s) -lt $end ]; do
+		sleep 1
+		if whatsup -d $hostlist | grep -q -w $hostlist ; then
+			pools_exported="yes"
+			break
+		fi
+
+		if [ "no pools available" = "$($PDSH -N -w $hostlist zpool list)" ]; then
+			pools_exported="yes"
+			break
+		fi
+	done
+
+	if [ "$pools_exported" != "yes" ]; then
+		echo "pools not exported from $hostlist after $timeout seconds" >&2
+	fi
+}
+
+function pcs_node_status {
+	local node=$1
+
+	if [ -z "$node" ]; then
+		echo "$0: pcs_node_status: missing argument node" >&2
+		exit 2
+	fi
+
+	pcs status nodes | grep -w $node | awk '{print $1}'
+}
+
+function lustre_node_ready {
+	local node=$1
+	local desired_toss=$2
+
+	if [ -z "$node" ]; then
+		echo "$0: lustre_node_ready: missing argument node" >&2
+		exit 2
+	fi
+
+	if [ -z "$desired_toss" ]; then
+		echo "$0: lustre_node_ready: missing argument desired_toss" >&2
+		exit 2
+	fi
+
+	local new_toss_version=$(actual_toss_version $node)
+	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
+	local node_status=$(pcs_node_status $node)
+
+	if [ "$new_toss_version" = $desired_toss -a "$zpool_present" = $node -a "$node_status" = "Standby:" ]; then
+		echo "yes"
+	else
+		echo "no"
+	fi
+}
+
+function bounce_sample_node {
+	local desired_toss=$1
+
+	if [ -z "$desired_toss" ]; then
+		echo "$0: bounce_sample_node: missing argument desired_toss" >&2
+		exit 2
+	fi
+
+	local sample_node=$(nodeattr -n oss | tail -n1)
+	#local sample_node=$(nodeattr -n mds | tail -n1)
+	local partner_node=$(ldev --hostname $sample_node -p)
+
+	echo "$0: bounce_sample_node: bouncing node $sample_node to test image failover"
+
+	local sample_node_status=$(pcs_node_status $sample_node)
+	local partner_node_status=$(pcs_node_status $partner_node)
+
+	echo "sample_node: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
+
+	if [ "$partner_node_status" != "Online:" ]; then
+		echo "$0: bounce_sample_node: sample node parter ($partner_node) not Online, fix and retry" >&2
+		exit 2
+	fi
+
+	$DRYRUN pcs node standby $sample_node
+	wait_for_zpools_exported $sample_node 300
+	$DRYRUN pcs stonith fence $sample_node
+	wait_for_hostlist_up $sample_node 300
+
+	if [ "$(lustre_node_ready $sample_node $desired_toss)" != "yes" ]; then
+		echo "$0: bounce_sample_node: sample node ($sample_node) update failed, proceed manually" >&2
+		exit 2
+	fi
+}
+
 #desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
 #desired_release=$(echo $desired | awk --field-separator - '{print $4}')
 #echo desired $desired desired_mm $desired_mm desired_release $desired_release
 
+# make sure we have current configs in place
+$DRYRUN cfagent -K
+
+if [ $(verify_image $desired) = "no" ]; then
+	create_image $desired
+fi
+
 update_mgmt_nodes $desired $desired_kernel
 
+update_firmware
 
-echo continuing
+bounce_sample_node $desired
+
+echo "BOUNCED SAMPLE NODE - READY FOR REST OF CLUSTER"
+
 exit 0
-
-
-	# create the image
-	# no extra yum related options required to pick up production release
-	create_yum_image -i lustre base netroot x86_64 lustre_2.10 &&  /tftpboot/scripts/activate_image -i lustre -l && echo "IMAGE READY"
-
-	# follow instructions to update firmware if necessary
-
-# stop pacemaker so we can reboot primgmt node
-pcs cluster kill
-
-# create a tut script named after version we are updating mgmt node to, run it
-cd /root/update/tut/
-cp /admin/tut/bin/updates/${tut_base} ${version}
-./${version} 
-
-# make sure we have current configs in place
-cfagent -K
-
-pdsh -f 128 -Av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
-pdsh -f 128 -Av /sbin/ib_burn_fw
-pdsh -f 128 -Av -X cfhost umount /usr/share/ib_firmware
-
-echo ================================================
-echo EXITING EARLY - VERIFY IMAGE CONTENTS
-echo THEN REBOOT MGMT NODE
-echo THEN FOLLOW STEPS BELOW
-echo ================================================
-exit
-
-
-# reboot
-# after the reboot:
-# cfagent -K
 
 ## Stop pacemaker and then reboot all the nodes
 # pcs cluster kill
