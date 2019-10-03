@@ -445,6 +445,7 @@ function bounce_sample_node {
 		exit 2
 	fi
 
+	# Could instead take highest numbered Online node from pcs node status output
 	local sample_node=$(nodeattr -n oss | tail -n1)
 	#local sample_node=$(nodeattr -n mds | tail -n1)
 	local partner_node=$(ldev --hostname $sample_node -p)
