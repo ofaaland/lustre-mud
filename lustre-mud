@@ -1,0 +1,170 @@
+#!/usr/bin/bash
+
+set -e
+
+## Principles of operation
+# 1. Work in stages; Altmgmt, then Primgmt, then Sample, then mds, then oss
+# 2. Direct all work from primgmt via pdsh
+# 3. Track state of the set of nodes currently being worked,
+# rather than trying to identify and track state changes
+# in the entire cluster.
+
+######## Overall Process #######
+## for my node in altmgmt primgmt; do
+##   update $node
+##   reboot $node
+##   verify $node
+##
+## update image
+##
+## standby sample-node
+## reboot sample-node
+## verify sample-node
+## unstandby sample-node
+##
+## reboot mds-nodes
+## verify mds-nodes
+## reboot oss-nodes
+## verify oss-nodes
+################################
+
+if ! nodeattr primgmt ; then
+	echo "$0: must be run from primgmt" >&2
+	exit 1
+fi
+
+if [ $(id -u) -ne 0 ]; then
+	echo "$0: must be run as root" >&2
+	exit 1
+fi
+
+function actual_version {
+	local node=$1
+
+	local actual=$(pdsh -N -w $node distro_version | awk '{print $NF}')
+	#actual_mm=$(pdsh -w $node distro_version -mm)
+	#actual_release=$(pdsh -w $node distro_version -release)
+	#echo "actual $actual actual_mm $actual_mm actual_release $actual_release"
+
+	echo $actual
+}
+
+function update_required {
+	local actual=$1
+	local desired=$2
+
+	rpmdev-vercmp "${actual}" "${desired}" >/dev/null
+	local rc=$?
+	if [ $rc -eq 12 ]; then
+		# desired is newer
+		echo "yes"
+	else
+		echo "no"
+	fi
+}
+
+function toss_update_required {
+	local node=$1
+	local desired=$2
+
+	actual=$(actual_version e$(nodeattr -q primgmt))
+
+	update_required $actual $desired
+}
+
+function reboot_required {
+	local node=$1
+	local desired=$2
+
+	local running=$(pdsh -N -w $node uname -r)
+	update_required $running $desired
+}
+
+desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
+#desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
+#desired_release=$(echo $desired | awk --field-separator - '{print $4}')
+#echo desired $desired desired_mm $desired_mm desired_release $desired_release
+
+do_toss_update=$(toss_update_required e$(nodeattr -q primgmt) $desired)
+
+desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
+
+do_reboot=$(reboot_required e$(nodeattr -q primgmt) $desired_kernel)
+
+echo toss_update $do_toss_update reboot $do_reboot
+
+echo continuing
+exit 0
+
+# Determine state
+#   Current TOSS version
+#   Desired TOSS version
+#   Current running kernel
+#   Desired running kernel
+
+
+tut_base="3.4-8"
+version="3.4-8"
+
+# tut lives in /admin/tut/bin/updates
+
+# Reference is most recent update doc in /usr/admin/docs
+#less /usr/admin/docs/toss3.3-1_update 
+# Below are based on update doc
+
+# create the image
+# no extra yum related options required to pick up production release
+create_yum_image -i lustre base netroot x86_64 lustre_2.10 &&  /tftpboot/scripts/activate_image -i lustre -l && echo "IMAGE READY"
+
+# follow instructions to update firmware if necessary
+
+# stop pacemaker so we can reboot primgmt node
+pcs cluster kill
+
+# create a tut script named after version we are updating mgmt node to, run it
+cd /root/update/tut/
+cp /admin/tut/bin/updates/${tut_base} ${version}
+./${version} 
+
+# make sure we have current configs in place
+cfagent -K
+
+pdsh -f 128 -Av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
+pdsh -f 128 -Av /sbin/ib_burn_fw
+pdsh -f 128 -Av -X cfhost umount /usr/share/ib_firmware
+
+echo ================================================
+echo EXITING EARLY - VERIFY IMAGE CONTENTS
+echo THEN REBOOT MGMT NODE
+echo THEN FOLLOW STEPS BELOW
+echo ================================================
+exit
+
+
+# reboot
+# after the reboot:
+# cfagent -K
+
+## Stop pacemaker and then reboot all the nodes
+# pcs cluster kill
+# pm -0 jet[1-21]
+# pm -q jet[1-21]
+# pm -1 jet[1-21]
+# watch -n5 whatsup
+# sudo lustre_cluster_check
+
+## After all the nodes are up, start pacemaker; lustre should start cleanly
+#sudo systemctl start pacemaker
+#sleep 180
+#sudo lustre_cluster_check
+#sudo pcs status | less
+
+# expected output of lustre_cluster_check:
+#----------------
+#lquake-MDT[0000-000F],lquake-OST[0000-0003],MGS
+#----------------
+#healthy pacemaker_remote_status=active
+#----------------
+#jet21
+#----------------
+#LUSTRE_SERVICES_NOT_RUNNING pacemaker_remote_status=active
