@@ -8,6 +8,8 @@ set -e
 # 3. Track state of the set of nodes currently being worked,
 # rather than trying to identify and track state changes
 # in the entire cluster.
+# 4. Bail out when a stage fails, let admin fix/finish by hand
+# 5. All state changes prefixed with $DRYRUN so they can be echoed instead of executed
 
 ######## Overall Process #######
 ## for my node in altmgmt primgmt; do
@@ -21,11 +23,6 @@ set -e
 ## reboot sample-node
 ## verify sample-node
 ## unstandby sample-node
-##
-## reboot mds-nodes
-## verify mds-nodes
-## reboot oss-nodes
-## verify oss-nodes
 ################################
 
 if ! nodeattr primgmt ; then
@@ -38,20 +35,51 @@ if [ $(id -u) -ne 0 ]; then
 	exit 1
 fi
 
-function actual_version {
+desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
+desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
+PDSH="pdsh -t2 -u30"
+DRYRUN="echo"
+
+function actual_toss_version {
 	local node=$1
 
-	local actual=$(pdsh -N -w $node distro_version | awk '{print $NF}')
-	#actual_mm=$(pdsh -w $node distro_version -mm)
-	#actual_release=$(pdsh -w $node distro_version -release)
+	if [ -z "$node" ]; then
+		echo "$0: actual_toss_version: missing argument node" >&2
+		exit 2
+	fi
+
+	local actual=$(${PDSH} -N -w $node distro_version | awk '{print $NF}')
+	#actual_mm=$(${PDSH} -w $node distro_version -mm)
+	#actual_release=$(${PDSH} -w $node distro_version -release)
 	#echo "actual $actual actual_mm $actual_mm actual_release $actual_release"
 
 	echo $actual
 }
 
+function running_kernel {
+	local node=$1
+
+	if [ -z "$node" ]; then
+		echo "$0: running_kernel: missing argument node" >&2
+		exit 2
+	fi
+
+	echo $(${PDSH} -N -w $node uname -r)
+}
+
 function update_required {
 	local actual=$1
 	local desired=$2
+
+	if [ -z "$actual" ]; then
+		echo "$0: update_required: missing argument actual" >&2
+		exit 2
+	fi
+
+	if [ -z "$desired" ]; then
+		echo "$0: update_required: missing argument desired" >&2
+		exit 2
+	fi
 
 	rpmdev-vercmp "${actual}" "${desired}" >/dev/null
 	local rc=$?
@@ -63,60 +91,188 @@ function update_required {
 	fi
 }
 
-function toss_update_required {
+function want_toss_update {
 	local node=$1
 	local desired=$2
 
-	actual=$(actual_version e$(nodeattr -q primgmt))
+	if [ -z "$node" ]; then
+		echo "$0: want_toss_update: missing argument node" >&2
+		exit 2
+	fi
+
+	if [ -z "$desired" ]; then
+		echo "$0: want_toss_update: missing argument desired" >&2
+		exit 2
+	fi
+
+	actual=$(actual_toss_version e$(nodeattr -q primgmt))
 
 	update_required $actual $desired
 }
 
-function reboot_required {
+function want_reboot {
 	local node=$1
 	local desired=$2
 
-	local running=$(pdsh -N -w $node uname -r)
+	if [ -z "$node" ]; then
+		echo "$0: want_reboot: missing argument node" >&2
+		exit 2
+	fi
+
+	if [ -z "$desired" ]; then
+		echo "$0: want_reboot: missing argument desired" >&2
+		exit 2
+	fi
+
+	local running=$(running_kernel $node)
 	update_required $running $desired
 }
 
-desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
+function update_mgmt_node {
+	local node=$1
+	local version=$2
+
+	if [ -z "$node" ]; then
+		echo "$0: update_mgmt_node: missing argument node" >&2
+		exit 2
+	fi
+
+	if [ -z "$version" ]; then
+		echo "$0: update_mgmt_node: missing argument version" >&2
+		exit 2
+	fi
+
+	echo "UPDATING node $node to $version"
+	local tut=/admin/tut/bin/updates/${version}
+
+	if [ -x $tut ]; then
+		${PDSH} -w $node echo $tut
+		if [ $? -ne 0 ]; then
+			echo "$0: ERROR $tut failed on node $node." >&2
+			exit 4
+		fi
+	else
+		echo "$0: ERROR $tut is not executable." >&2
+		exit 4
+	fi
+}
+
+function reboot_mgmt_node {
+	local node=$1
+
+	if [ -z "$node" ]; then
+		echo "$0: reboot_mgmt_node: missing argument node" >&2
+		exit 2
+	fi
+
+	echo "REBOOTING node $node"
+	if nodeattr $node pacemaker ; then
+		${PDSH} -w e${node} $DRYRUN pcs cluster kill
+	fi
+
+	${PDSH} -w e${node} $DRYRUN umount -a -l nfs
+	$DRYRUN ${PDSH} -w e${node} 'echo b | tee /proc/sysrq-trigger'
+}
+
+# Wait until the specified host(s) are 'up' per whatsup and multi-user.target was reached
+# timeout is in seconds
+function wait_for_hostlist_up {
+	local hostlist=$1
+	local timeout=$2
+
+	if [ -z "$hostlist" ]; then
+		echo "$0: wait_for_hostlist_up: missing argument hostlist" >&2
+		exit 2
+	fi
+
+	if [ -z "$timeout" ]; then
+		echo "$0: wait_for_hostlist_up: missing argument timeout" >&2
+		exit 2
+	fi
+
+	local start=$(date +%s)
+	local end=$((start + timeout))
+
+	local are_up=""
+	while [ $(date +%s) -lt $end ]; do
+		sleep 1
+		if ! whatsup -u $hostlist | grep -q -w $hostlist ; then
+			continue
+		fi
+
+		if [ "active" = $($PDSH -N -w $hostlist systemctl status multi-user.target | awk '/Active:/ {print $2}') ]; then
+			are_up="yes"
+			break
+		fi
+	done
+
+	if [ "$are_up" != "yes" ]; then
+		echo "$hostlist not up after $timeout seconds" >&2
+	fi
+}
+
+function update_mgmt_nodes {
+	local desired_toss=$1
+	local desired_kernel=$2
+
+	if [ -z "$desired_toss" ]; then
+		echo "$0: update_mgmt_nodes: missing argument desired_toss" >&2
+		exit 2
+	fi
+
+	if [ -z "$desired_kernel" ]; then
+		echo "$0: update_mgmt_nodes: missing argument desired_kernel" >&2
+		exit 2
+	fi
+
+	altmgmt=$(nodeattr -q altmgmt)
+	if [ -n "$altmgmt" ]; then
+		echo "altmgmt is >$altmgmt<"
+		if [ $(hostlist --count $altmgmt) -gt 1 ]; then
+			echo "$0: unable to correctly handle clusters with >1 altmgmt node.  Exiting." >&2
+			exit 2
+		fi
+	fi
+
+	for gender in altmgmt primgmt; do
+		echo "Checking $gender nodes"
+
+		node=$(nodeattr -q $gender)
+		if [ -n "$node" ]; then
+			toss_update_required=$(want_toss_update e${node} ${desired_toss})
+			if [ $toss_update_required = "yes" ]; then
+				echo $node: $gender toss_update $toss_update_required from $(actual_toss_version e${node}) to $desired_toss
+				update_mgmt_node e$node ${desired_toss}
+			fi
+
+			reboot_required=$(want_reboot e${node} ${desired_kernel})
+			if [ $reboot_required = "yes" ]; then
+				echo $node: $gender reboot $reboot_required from $(running_kernel e${node}) to $desired_kernel
+				reboot_mgmt_node $node
+				wait_for_hostlist_up $node 300
+			fi
+		else
+			echo "No nodes with gender $gender"
+		fi
+	done
+}
+
 #desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
 #desired_release=$(echo $desired | awk --field-separator - '{print $4}')
 #echo desired $desired desired_mm $desired_mm desired_release $desired_release
 
-do_toss_update=$(toss_update_required e$(nodeattr -q primgmt) $desired)
+update_mgmt_nodes $desired $desired_kernel
 
-desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
-
-do_reboot=$(reboot_required e$(nodeattr -q primgmt) $desired_kernel)
-
-echo toss_update $do_toss_update reboot $do_reboot
 
 echo continuing
 exit 0
 
-# Determine state
-#   Current TOSS version
-#   Desired TOSS version
-#   Current running kernel
-#   Desired running kernel
 
+	# create the image
+	# no extra yum related options required to pick up production release
+	create_yum_image -i lustre base netroot x86_64 lustre_2.10 &&  /tftpboot/scripts/activate_image -i lustre -l && echo "IMAGE READY"
 
-tut_base="3.4-8"
-version="3.4-8"
-
-# tut lives in /admin/tut/bin/updates
-
-# Reference is most recent update doc in /usr/admin/docs
-#less /usr/admin/docs/toss3.3-1_update 
-# Below are based on update doc
-
-# create the image
-# no extra yum related options required to pick up production release
-create_yum_image -i lustre base netroot x86_64 lustre_2.10 &&  /tftpboot/scripts/activate_image -i lustre -l && echo "IMAGE READY"
-
-# follow instructions to update firmware if necessary
+	# follow instructions to update firmware if necessary
 
 # stop pacemaker so we can reboot primgmt node
 pcs cluster kill
