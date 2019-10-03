@@ -62,7 +62,7 @@ function actual_toss_version {
 		exit 2
 	fi
 
-	local actual=$(${PDSH} -N -w $node distro_version | awk '{print $NF}')
+	local actual=$(${PDSH} -N -w e${node} distro_version | awk '{print $NF}')
 	#actual_mm=$(${PDSH} -w $node distro_version -mm)
 	#actual_release=$(${PDSH} -w $node distro_version -release)
 	#echo "actual $actual actual_mm $actual_mm actual_release $actual_release"
@@ -78,7 +78,7 @@ function running_kernel {
 		exit 2
 	fi
 
-	echo $(${PDSH} -N -w $node uname -r)
+	echo $(${PDSH} -N -w e${node} uname -r)
 }
 
 function update_required {
@@ -216,7 +216,7 @@ function wait_for_hostlist_up {
 			continue
 		fi
 
-		if [ "active" = $($PDSH -N -w $hostlist systemctl status multi-user.target | awk '/Active:/ {print $2}') ]; then
+		if [ "active" = $($PDSH -N -w e${hostlist} systemctl status multi-user.target | awk '/Active:/ {print $2}') ]; then
 			are_up="yes"
 			break
 		fi
@@ -390,7 +390,7 @@ function wait_for_zpools_exported {
 			break
 		fi
 
-		if [ "no pools available" = "$($PDSH -N -w $hostlist zpool list)" ]; then
+		if [ "no pools available" = "$($PDSH -N -w e${hostlist} zpool list)" ]; then
 			pools_exported="yes"
 			break
 		fi
