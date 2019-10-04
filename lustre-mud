@@ -119,7 +119,7 @@ function want_toss_update {
 		exit 2
 	fi
 
-	actual=$(actual_toss_version e$(nodeattr -q primgmt))
+	actual=$(actual_toss_version e${node})
 
 	update_required $actual $desired
 }
