@@ -181,11 +181,11 @@ function reboot_node {
 
 	echo "REBOOTING node $node"
 	if nodeattr $node pacemaker ; then
-		${PDSH} -w e${node} $DRYRUN pcs cluster kill
+		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
 	fi
 
 	if nodeattr $node mgmt ; then
-		${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
+		$DRYRUN ${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
 	fi
 	$DRYRUN ${PDSH} -w e${node} 'echo b | tee /proc/sysrq-trigger'
 }
