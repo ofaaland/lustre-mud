@@ -289,11 +289,11 @@ function get_image_name {
 	nodeattr -V iscsi | head -n1
 }
 
-function verify_image {
+function is_image_ready {
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: verify_image: missing argument desired_toss" >&2
+		echo "$0: is_image_ready: missing argument desired_toss" >&2
 		exit 2
 	fi
 
@@ -301,7 +301,7 @@ function verify_image {
 	local image_ready="no"
 
 	if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
-		echo "$0: verify_image: image $image_name already loopback mounted; umount and retry" >&2
+		echo "$0: is_image_ready: image $image_name already loopback mounted; umount and retry" >&2
 		exit 2
 	fi
 
@@ -356,7 +356,7 @@ function create_image {
 	$DRYRUN create_yum_image -i ${image_name} -b ${NBD_SIZE} base netroot $(arch) ${lustre_group}
 	$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
 
-	if [ -z "$DRYRUN" -a $(verify_image $desired) = "no" ]; then
+	if [ -z "$DRYRUN" -a $(is_image_ready $desired) = "no" ]; then
 		echo "$0: create_image: failed to validate new image" >&2
 		exit 2
 	fi
@@ -486,8 +486,10 @@ function bounce_sample_node {
 # make sure we have current configs in place
 $DRYRUN cfagent -K
 
-if [ $(verify_image $desired) = "no" ]; then
+if [ $(is_image_ready $desired) = "no" ]; then
 	create_image $desired
+else
+	echo "Image Ready" &>2
 fi
 
 update_mgmt_nodes $desired $desired_kernel
