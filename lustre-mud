@@ -53,6 +53,7 @@ fi
 
 desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
 desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
+use_iscsi=$(nodeattr -q 'mds&&iscsi')
 
 function actual_toss_version {
 	local node=$1
@@ -285,12 +286,24 @@ function update_mgmt_nodes {
 
 function get_image_name {
 	local iscsi_image_count=$(nodeattr -V iscsi | sort -u | wc -l)
-	if [ $iscsi_image_count -ne 1 ]; then
-		echo "$0: create_image: script only handles clusters with 1 iscsi image" >&2
-		exit 2
+	local nfsroot_image_count=$(nodeattr -V nfsroot | sort -u | wc -l)
+
+	local imgname=""
+	if [ -n "$use_iscsi" ]; then
+		if [ $iscsi_image_count -ne 1 ]; then
+			echo "$0: create_image: script only handles clusters with 1 iscsi image" >&2
+			exit 2
+		fi
+		imgname=$(nodeattr -V iscsi | head -n1)
+	else
+		if [ $nfsroot_image_count -ne 1 ]; then
+			echo "$0: create_image: script only handles clusters with 1 nfsroot image" >&2
+			exit 2
+		fi
+		imgname=$(nodeattr -V nfsroot | head -n1)
 	fi
 
-	nodeattr -V iscsi | head -n1
+	echo $imgname
 }
 
 function is_image_ready {
@@ -357,8 +370,19 @@ function create_image {
 	nodeattr lustre212 && lustre_group="lustre_2.12"
 	nodeattr lustre28 && lustre_group="lustre_2.8"
 
-	$DRYRUN create_yum_image -i ${image_name} -b ${NBD_SIZE} base netroot $(arch) ${lustre_group}
-	$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
+	local nbd_size_opt=""
+	if [ -n "$use_iscsi" ]; then
+		nbd_size_opt="-b ${NBD_SIZE}"
+	fi
+
+	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} base netroot $(arch) ${lustre_group}
+
+	local nbd_size_opt=""
+	if [ -n "$use_iscsi" ]; then
+		$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
+	else
+		$DRYRUN /tftpboot/scripts/activate_image -i ${image_name} -l
+	fi
 
 	if [ -z "$DRYRUN" -a $(is_image_ready $desired) = "no" ]; then
 		echo "$0: create_image: failed to validate new image" >&2
