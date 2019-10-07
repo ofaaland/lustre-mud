@@ -265,6 +265,8 @@ function update_mgmt_nodes {
 			if [ $toss_update_required = "yes" ]; then
 				echo $0: $node: $gender toss_update $toss_update_required from $(actual_toss_version ${node}) to $desired_toss
 				update_mgmt_node $node ${desired_toss}
+			else
+				echo "$0: $node: $gender no update reqd, already running toss $desired_toss"
 			fi
 
 			reboot_required=$(want_reboot ${node} ${desired_kernel})
@@ -272,6 +274,8 @@ function update_mgmt_nodes {
 				echo $node: $gender reboot $reboot_required from $(running_kernel ${node}) to $desired_kernel
 				reboot_node $node
 				wait_for_hostlist_up $node 300
+			else
+				echo "$0: $node: $gender no reboot reqd, already running kernel $desired_kernel"
 			fi
 		else
 			echo "No nodes with gender $gender"
