@@ -547,7 +547,7 @@ function bounce_all_nodes {
 	$DRYRUN pm -g -0 'mds||oss'
 	if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
 		echo "$0: ${funcname}: failed to power off nodes $nodelist, proceed manually" >&2
-		exit 2
+		$DRYRUN exit 2
 	fi
 
 	echo "$0: ${funcname}: powering on all lustre servers"
