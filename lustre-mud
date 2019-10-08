@@ -558,8 +558,8 @@ function bounce_all_nodes {
 	fi
 
 	echo "$0: ${funcname}: waiting for lustre servers to boot"
-	sleep 120
-	wait_for_hostlist_up $sample_node 300
+	sleep 60
+	wait_for_hostlist_up $nodelist 420
 
 	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
@@ -578,7 +578,7 @@ function bounce_all_nodes {
 
 	$DRYRUN systemctl start pacemaker
 
-	wait_for_zpools_imported $sample_node 300
+	wait_for_zpools_imported $nodelist 300
 }
 
 function bounce_sample_node {
