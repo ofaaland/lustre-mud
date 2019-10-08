@@ -635,7 +635,6 @@ update_firmware
 
 bounce_sample_node $desired
 
-echo "BOUNCED SAMPLE NODE - READY FOR REST OF CLUSTER"
 
 exit 0
 
