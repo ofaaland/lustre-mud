@@ -467,6 +467,7 @@ function pcs_node_status {
 function lustre_node_ready {
 	local node=$1
 	local desired_toss=$2
+	local ready="yes"
 
 	if [ -z "$node" ]; then
 		echo "$0: lustre_node_ready: missing argument node" >&2
@@ -480,13 +481,12 @@ function lustre_node_ready {
 
 	local new_toss_version=$(actual_toss_version $node)
 	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
-	local node_status=$(pcs_node_status $node)
 
-	if [ "$new_toss_version" = $desired_toss -a "$zpool_present" = $node -a "$node_status" = "Standby:" ]; then
-		echo "yes"
-	else
-		echo "no"
+	if [ "$new_toss_version" != $desired_toss -o "$zpool_present" != $node ]; then
+		ready="no"
 	fi
+
+	echo $ready
 }
 
 function bounce_sample_node {
