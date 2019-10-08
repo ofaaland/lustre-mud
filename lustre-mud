@@ -516,9 +516,14 @@ function lustre_node_ready {
 	fi
 
 	local new_toss_version=$(actual_toss_version $node)
+	local zpool_imported=$($PDSH -w e${node} zpool list $node 2> /dev/null)
 	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
 
-	if [ "$new_toss_version" != $desired_toss -o "$zpool_present" != $node ]; then
+	if [ "$new_toss_version" != $desired_toss ]; then
+		ready="no"
+	fi
+
+	if [ -z "$zpool_imported" -a "$zpool_present" != $node ]; then
 		ready="no"
 	fi
 
