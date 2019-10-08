@@ -315,33 +315,51 @@ function is_image_ready {
 	fi
 
 	local image_name=$(get_image_name)
+	local image_path=/tftpboot/images/${image_name}.$(arch).latest
 	local image_ready="no"
 
-	if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
-		echo "$0: is_image_ready: image $image_name already loopback mounted; umount and retry" >&2
-		exit 2
+	if [ -n "$use_iscsi" ]; then
+		if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
+			echo "$0: is_image_ready: image $image_name already loopback mounted; umount and retry" >&2
+			exit 2
+		fi
 	fi
 
-	local image_path=/tftpboot/images/${image_name}.x86_64.latest
-
-	if [ -f $image_path ]; then
+	if [ -h $image_path ]; then
+		local mount_path=$image_path
 		local real_image_name=$(basename $(realpath $image_path))
-		local mount_path=/mnt/$image_name
 		local mounted=""
 
-		mkdir -p $mount_path
-		if mount -o loop,ro $image_path $mount_path; then
-			mounted=yes
+		if [ -n "$use_iscsi" ]; then
+			mount_path=/mnt/${image_name}
+			mkdir -p $mount_path
+			if mount -o loop,ro $image_path $mount_path; then
+				mounted=yes
+			fi
+		fi
+
+		if [ -d ${image_path}/etc ]; then
+			# Check TOSS version and distro_diff
 			local image_version=$(chroot $mount_path distro_version | sed 's/toss //')
 			if [ $image_version = $desired_toss ]; then
 				local image_diff=$(chroot $mount_path distro_diff | wc -l)
 				if [ $image_diff -lt 30 ]; then
-					if [ -f /tftpboot/images/.$real_image_name ]; then
-						image_ready="yes"
-					fi
+					image_ready="yes"
+				fi
+			fi
+
+			# Check that it's been activated
+			if [ -n "$use_iscsi" ]; then
+				if [ ! -f /tftpboot/images/.$real_image_name ]; then
+					image_ready="no"
+				fi
+			else
+				if [ ! -f ${image_path}/etc/passwd ]; then
+					image_ready="no"
 				fi
 			fi
 		fi
+
 		if [ "$mounted" = "yes" ]; then
 			umount $mount_path
 		fi
