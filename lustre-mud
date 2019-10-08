@@ -525,6 +525,57 @@ function lustre_node_ready {
 	echo $ready
 }
 
+function bounce_all_nodes {
+	local funcname="bounce_al_nodes"
+	local desired_toss=$1
+
+	if [ -z "$desired_toss" ]; then
+		echo "$0: ${funcname}: missing argument desired_toss" >&2
+		exit 2
+	fi
+
+	local nodelist=$(nodeattr -q 'mds||oss')
+	echo "$0: ${funcname}: stopping pacemaker"
+	$DRYRUN pcs cluster kill
+
+	echo "$0: ${funcname}: powering off all lustre servers"
+	$DRYRUN pm -g -0 'mds||oss'
+	if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
+		echo "$0: ${funcname}: failed to power off nodes $nodelist, proceed manually" >&2
+		exit 2
+	fi
+
+	echo "$0: ${funcname}: powering on all lustre servers"
+	$DRYRUN pm -g -1 'mds||oss'
+	if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
+		echo "$0: ${funcname}: failed to power on nodes $nodelist, proceed manually" >&2
+		exit 2
+	fi
+
+	echo "$0: ${funcname}: waiting for lustre servers to boot"
+	sleep 120
+	wait_for_hostlist_up $sample_node 300
+
+	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
+	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
+
+	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
+		echo "$0: ${funcname}: rebooted nodes ($nodelist) not all $desired_toss, proceed manually" >&2
+		exit 2
+	fi
+
+	if [ $badnode_count" != 0 ]; then
+		echo "$0: ${funcname}: some rebooted nodes in ($nodelist) have badnode, proceed manually" >&2
+		exit 2
+	fi
+
+	$DRYRUN $PDSH -w e${node} zpool import \$(hostname)
+
+	$DRYRUN systemctl start pacemaker
+
+	wait_for_zpools_imported $sample_node 300
+}
+
 function bounce_sample_node {
 	local desired_toss=$1
 
