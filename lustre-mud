@@ -635,6 +635,7 @@ update_firmware
 
 bounce_sample_node $desired
 
+bounce_all_nodes $desired
 
 exit 0
 
