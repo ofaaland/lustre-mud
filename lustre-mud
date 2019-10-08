@@ -213,7 +213,7 @@ function wait_for_hostlist_up {
 	local are_up=""
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
-		if ! whatsup -u $hostlist | grep -q -w $hostlist ; then
+		if ! whatsup -u $hostlist | fgrep -q -w $hostlist ; then
 			continue
 		fi
 
