@@ -316,10 +316,11 @@ function is_image_ready {
 	fi
 
 	local image_name=$(get_image_name)
-	local image_path=/tftpboot/images/${image_name}.$(arch).latest
+	local image_path=/tftpboot/images/${image_name}.$(arch)
 	local image_ready="no"
 
 	if [ -n "$use_iscsi" ]; then
+		image_path=/tftpboot/images/${image_name}.$(arch).latest
 		if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
 			echo "$0: is_image_ready: image $image_name already loopback mounted; umount and retry" >&2
 			exit 2
