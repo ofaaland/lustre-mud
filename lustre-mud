@@ -338,7 +338,7 @@ function is_image_ready {
 			fi
 		fi
 
-		if [ -d ${image_path}/etc ]; then
+		if [ -d ${mount_path}/etc ]; then
 			# Check TOSS version and distro_diff
 			local image_version=$(chroot $mount_path distro_version | sed 's/toss //')
 			if [ $image_version = $desired_toss ]; then
