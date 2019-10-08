@@ -217,7 +217,7 @@ function wait_for_hostlist_up {
 			continue
 		fi
 
-		local current_status=$($PDSH -N -w e${hostlist} systemctl status multi-user.target | awk '/Active:/ {print $2}')
+		local current_status=$($PDSH -N -w e${hostlist} systemctl status multi-user.target | awk '/Active:/ {print $2}' | uniq)
 		if [ -z "$current_status" ]; then
 			# node down
 			continue
