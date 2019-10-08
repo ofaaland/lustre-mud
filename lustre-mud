@@ -415,6 +415,40 @@ function update_firmware {
 	$DRYRUN $PDSH -f 128 -Av -X cfhost umount /usr/share/ib_firmware
 }
 
+# Wait until the specified host(s) have pools imported
+# timeout is in seconds
+function wait_for_zpools_imported {
+	local hostlist=$1
+	local timeout=$2
+
+	if [ -z "$hostlist" ]; then
+		echo "$0: wait_for_hostlist_up: missing argument hostlist" >&2
+		exit 2
+	fi
+
+	if [ -z "$timeout" ]; then
+		echo "$0: wait_for_hostlist_up: missing argument timeout" >&2
+		exit 2
+	fi
+
+	local start=$(date +%s)
+	local end=$((start + timeout))
+
+	local pools_imported=""
+	while [ $(date +%s) -lt $end ]; do
+		sleep 1
+		local nodes_with_online=$($PDSH -w e${hostlist} 'zpool list | grep ONLINE | xargs --no-run-if-empty' | wc -l)
+		if [ $nodes_with_online -eq $(hostlist -c $hostlist) ]; then
+			pools_imported="yes"
+			break
+		fi
+	done
+
+	if [ "$pools_imported" != "yes" ]; then
+		echo "pools not imported from $hostlist after $timeout seconds" >&2
+	fi
+}
+
 # Wait until the specified host(s) have no pools imported
 # timeout is in seconds
 function wait_for_zpools_exported {
@@ -524,6 +558,9 @@ function bounce_sample_node {
 		echo "$0: bounce_sample_node: sample node ($sample_node) update failed, proceed manually" >&2
 		exit 2
 	fi
+
+	$DRYRUN pcs node unstandby $sample_node
+	wait_for_zpools_imported $sample_node 300
 }
 
 #desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
