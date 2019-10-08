@@ -626,7 +626,7 @@ $DRYRUN cfagent -K
 if [ $(is_image_ready $desired) = "no" ]; then
 	create_image $desired
 else
-	echo "Image Ready" &>2
+	echo "Image Ready" >&2
 fi
 
 update_mgmt_nodes $desired $desired_kernel
