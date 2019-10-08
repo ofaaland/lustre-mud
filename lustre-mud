@@ -526,7 +526,7 @@ function lustre_node_ready {
 }
 
 function bounce_all_nodes {
-	local funcname="bounce_al_nodes"
+	local funcname="bounce_all_nodes"
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
@@ -564,12 +564,12 @@ function bounce_all_nodes {
 		exit 2
 	fi
 
-	if [ $badnode_count" != 0 ]; then
-		echo "$0: ${funcname}: some rebooted nodes in ($nodelist) have badnode, proceed manually" >&2
+	if [ $badnode_count != 0 ]; then
+		echo "$0: ${funcname}: some rebooted nodes in $nodelist have badnode, proceed manually" >&2
 		exit 2
 	fi
 
-	$DRYRUN $PDSH -w e${node} zpool import \$(hostname)
+	$DRYRUN $PDSH -w e${node} "zpool import \$(hostname)"
 
 	$DRYRUN systemctl start pacemaker
 
