@@ -578,7 +578,6 @@ function bounce_all_nodes {
 
 	$DRYRUN systemctl start pacemaker
 
-	wait_for_zpools_imported $nodelist 300
 }
 
 function bounce_sample_node {
