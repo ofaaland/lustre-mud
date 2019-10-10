@@ -31,23 +31,31 @@ DRYRUN=""
 ## unstandby sample-node
 ################################
 
+function error {
+	echo "$(date --rfc-3339=seconds) $0: ERROR $*" >&2
+}
+
+function log {
+	echo "$(date --rfc-3339=seconds) $0: $*"
+}
+
 if ! nodeattr pacemaker ; then
-	echo "$0: only for use on Lustre clusters" >&2
+	error "only for use on Lustre clusters"
 	exit 1
 fi
 
 if [ -z $(nodeattr -q mds) ] ; then
-	echo "$0: only for use on Lustre clusters" >&2
+	error "only for use on Lustre clusters"
 	exit 1
 fi
 
 if ! nodeattr primgmt ; then
-	echo "$0: must be run from primgmt" >&2
+	error "must be run from primgmt"
 	exit 1
 fi
 
 if [ $(id -u) -ne 0 ]; then
-	echo "$0: must be run as root" >&2
+	error "must be run as root"
 	exit 1
 fi
 
@@ -59,14 +67,11 @@ function actual_toss_version {
 	local node=$1
 
 	if [ -z "$node" ]; then
-		echo "$0: actual_toss_version: missing argument node" >&2
+		error "actual_toss_version: missing argument node"
 		exit 2
 	fi
 
 	local actual=$(${PDSH} -N -w e${node} distro_version | awk '{print $NF}')
-	#actual_mm=$(${PDSH} -w $node distro_version -mm)
-	#actual_release=$(${PDSH} -w $node distro_version -release)
-	#echo "actual $actual actual_mm $actual_mm actual_release $actual_release"
 
 	echo $actual
 }
@@ -75,7 +80,7 @@ function running_kernel {
 	local node=$1
 
 	if [ -z "$node" ]; then
-		echo "$0: running_kernel: missing argument node" >&2
+		error "running_kernel: missing argument node"
 		exit 2
 	fi
 
@@ -87,12 +92,12 @@ function update_required {
 	local desired=$2
 
 	if [ -z "$actual" ]; then
-		echo "$0: update_required: missing argument actual" >&2
+		error "update_required: missing argument actual"
 		exit 2
 	fi
 
 	if [ -z "$desired" ]; then
-		echo "$0: update_required: missing argument desired" >&2
+		error "update_required: missing argument desired"
 		exit 2
 	fi
 
@@ -111,12 +116,12 @@ function want_toss_update {
 	local desired=$2
 
 	if [ -z "$node" ]; then
-		echo "$0: want_toss_update: missing argument node" >&2
+		error "want_toss_update: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$desired" ]; then
-		echo "$0: want_toss_update: missing argument desired" >&2
+		error "want_toss_update: missing argument desired"
 		exit 2
 	fi
 
@@ -130,12 +135,12 @@ function want_reboot {
 	local desired=$2
 
 	if [ -z "$node" ]; then
-		echo "$0: want_reboot: missing argument node" >&2
+		error "want_reboot: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$desired" ]; then
-		echo "$0: want_reboot: missing argument desired" >&2
+		error "want_reboot: missing argument desired"
 		exit 2
 	fi
 
@@ -148,26 +153,26 @@ function update_mgmt_node {
 	local version=$2
 
 	if [ -z "$node" ]; then
-		echo "$0: update_mgmt_node: missing argument node" >&2
+		error "update_mgmt_node: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$version" ]; then
-		echo "$0: update_mgmt_node: missing argument version" >&2
+		error "update_mgmt_node: missing argument version"
 		exit 2
 	fi
 
-	echo "UPDATING node $node to $version"
+	log "UPDATING node $node to $version"
 	local tut=/admin/tut/bin/updates/${version}
 
 	if [ -x $tut ]; then
-		${PDSH} -w $node echo $tut
+		$DRYRUN ${PDSH} -w $node $tut
 		if [ $? -ne 0 ]; then
-			echo "$0: ERROR $tut failed on node $node." >&2
+			error "$tut update script failed on node $node."
 			exit 4
 		fi
 	else
-		echo "$0: ERROR $tut is not executable." >&2
+		error "$tut update script is not executable."
 		exit 4
 	fi
 }
@@ -176,11 +181,11 @@ function reboot_node {
 	local node=$1
 
 	if [ -z "$node" ]; then
-		echo "$0: reboot_node: missing argument node" >&2
+		error "reboot_node: missing argument node"
 		exit 2
 	fi
 
-	echo "REBOOTING node $node"
+	log "REBOOTING node $node"
 	if nodeattr $node pacemaker ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
 	fi
@@ -198,12 +203,12 @@ function wait_for_hostlist_up {
 	local timeout=$2
 
 	if [ -z "$hostlist" ]; then
-		echo "$0: wait_for_hostlist_up: missing argument hostlist" >&2
+		error "wait_for_hostlist_up: missing argument hostlist"
 		exit 2
 	fi
 
 	if [ -z "$timeout" ]; then
-		echo "$0: wait_for_hostlist_up: missing argument timeout" >&2
+		error "wait_for_hostlist_up: missing argument timeout"
 		exit 2
 	fi
 
@@ -230,7 +235,7 @@ function wait_for_hostlist_up {
 	done
 
 	if [ "$are_up" != "yes" ]; then
-		echo "$hostlist not up after $timeout seconds" >&2
+		error "$hostlist not up after $timeout seconds"
 	fi
 }
 
@@ -239,26 +244,25 @@ function update_mgmt_nodes {
 	local desired_kernel=$2
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: update_mgmt_nodes: missing argument desired_toss" >&2
+		error "update_mgmt_nodes: missing argument desired_toss"
 		exit 2
 	fi
 
 	if [ -z "$desired_kernel" ]; then
-		echo "$0: update_mgmt_nodes: missing argument desired_kernel" >&2
+		error "update_mgmt_nodes: missing argument desired_kernel"
 		exit 2
 	fi
 
 	altmgmt=$(nodeattr -q altmgmt)
 	if [ -n "$altmgmt" ]; then
-		echo "altmgmt is >$altmgmt<"
 		if [ $(hostlist --count $altmgmt) -gt 1 ]; then
-			echo "$0: unable to correctly handle clusters with >1 altmgmt node.  Exiting." >&2
+			error "unable to correctly handle clusters with >1 altmgmt node.  Exiting."
 			exit 2
 		fi
 	fi
 
 	for gender in altmgmt primgmt; do
-		echo "$0: Checking $gender nodes"
+		log "Checking $gender nodes"
 
 		node=$(nodeattr -q $gender)
 		if [ -n "$node" ]; then
@@ -267,7 +271,7 @@ function update_mgmt_nodes {
 				echo $0: $node: $gender toss_update $toss_update_required from $(actual_toss_version ${node}) to $desired_toss
 				update_mgmt_node $node ${desired_toss}
 			else
-				echo "$0: $node: $gender no update reqd, already running toss $desired_toss"
+				log "$node: $gender no update reqd, already running toss $desired_toss"
 			fi
 
 			reboot_required=$(want_reboot ${node} ${desired_kernel})
@@ -276,10 +280,10 @@ function update_mgmt_nodes {
 				reboot_node $node
 				wait_for_hostlist_up $node 300
 			else
-				echo "$0: $node: $gender no reboot reqd, already running kernel $desired_kernel"
+				log "$node: $gender no reboot reqd, already running kernel $desired_kernel"
 			fi
 		else
-			echo "No nodes with gender $gender"
+			log "No nodes with gender $gender"
 		fi
 	done
 }
@@ -291,13 +295,13 @@ function get_image_name {
 	local imgname=""
 	if [ -n "$use_iscsi" ]; then
 		if [ $iscsi_image_count -ne 1 ]; then
-			echo "$0: get_image_name: script only handles clusters with 1 iscsi image" >&2
+			error "get_image_name: script only handles clusters with 1 iscsi image"
 			exit 2
 		fi
 		imgname=$(nodeattr -V iscsi | head -n1)
 	else
 		if [ $nfsroot_image_count -ne 1 ]; then
-			echo "$0: get_image_name: script only handles clusters with 1 nfsroot image" >&2
+			error "get_image_name: script only handles clusters with 1 nfsroot image"
 			exit 2
 		fi
 		imgname=$(nodeattr -V nfsroot | head -n1 | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://')
@@ -311,7 +315,7 @@ function is_image_ready {
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: is_image_ready: missing argument desired_toss" >&2
+		error "is_image_ready: missing argument desired_toss"
 		exit 2
 	fi
 
@@ -322,7 +326,7 @@ function is_image_ready {
 	if [ -n "$use_iscsi" ]; then
 		image_path=/tftpboot/images/${image_name}.$(arch).latest
 		if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
-			echo "$0: is_image_ready: image $image_name already loopback mounted; umount and retry" >&2
+			error "is_image_ready: image $image_name already loopback mounted; umount and retry"
 			exit 2
 		fi
 	fi
@@ -374,12 +378,12 @@ function create_image {
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: create_image: missing argument desired_toss" >&2
+		error "create_image: missing argument desired_toss"
 		exit 2
 	fi
 
 	if [ $(arch) != "x86_64" ]; then
-		echo "$0: create_image: script untested with arch $(arch)" >&2
+		error "create_image: script untested with arch $(arch)"
 		exit 2
 	fi
 
@@ -405,7 +409,7 @@ function create_image {
 	fi
 
 	if [ -z "$DRYRUN" -a $(is_image_ready $desired) = "no" ]; then
-		echo "$0: create_image: failed to validate new image" >&2
+		error "create_image: failed to validate new image"
 		exit 2
 	fi
 }
@@ -424,12 +428,12 @@ function wait_for_zpools_imported {
 	local timeout=$2
 
 	if [ -z "$hostlist" ]; then
-		echo "$0: wait_for_hostlist_up: missing argument hostlist" >&2
+		error "wait_for_hostlist_up: missing argument hostlist"
 		exit 2
 	fi
 
 	if [ -z "$timeout" ]; then
-		echo "$0: wait_for_hostlist_up: missing argument timeout" >&2
+		error "wait_for_hostlist_up: missing argument timeout"
 		exit 2
 	fi
 
@@ -447,7 +451,7 @@ function wait_for_zpools_imported {
 	done
 
 	if [ "$pools_imported" != "yes" ]; then
-		echo "pools not imported from $hostlist after $timeout seconds" >&2
+		error "pools not imported from $hostlist after $timeout seconds"
 	fi
 }
 
@@ -458,12 +462,12 @@ function wait_for_zpools_exported {
 	local timeout=$2
 
 	if [ -z "$hostlist" ]; then
-		echo "$0: wait_for_hostlist_up: missing argument hostlist" >&2
+		error "wait_for_hostlist_up: missing argument hostlist"
 		exit 2
 	fi
 
 	if [ -z "$timeout" ]; then
-		echo "$0: wait_for_hostlist_up: missing argument timeout" >&2
+		error "wait_for_hostlist_up: missing argument timeout"
 		exit 2
 	fi
 
@@ -485,7 +489,7 @@ function wait_for_zpools_exported {
 	done
 
 	if [ "$pools_exported" != "yes" ]; then
-		echo "pools not exported from $hostlist after $timeout seconds" >&2
+		error "pools not exported from $hostlist after $timeout seconds"
 	fi
 }
 
@@ -493,7 +497,7 @@ function pcs_node_status {
 	local node=$1
 
 	if [ -z "$node" ]; then
-		echo "$0: pcs_node_status: missing argument node" >&2
+		error "pcs_node_status: missing argument node"
 		exit 2
 	fi
 
@@ -506,12 +510,12 @@ function lustre_node_ready {
 	local ready="yes"
 
 	if [ -z "$node" ]; then
-		echo "$0: lustre_node_ready: missing argument node" >&2
+		error "lustre_node_ready: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: lustre_node_ready: missing argument desired_toss" >&2
+		error "lustre_node_ready: missing argument desired_toss"
 		exit 2
 	fi
 
@@ -535,29 +539,29 @@ function bounce_all_nodes {
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: ${funcname}: missing argument desired_toss" >&2
+		error "${funcname}: missing argument desired_toss"
 		exit 2
 	fi
 
 	local nodelist=$(nodeattr -q 'mds||oss')
-	echo "$0: ${funcname}: stopping pacemaker"
+	log "${funcname}: stopping pacemaker"
 	$DRYRUN pcs cluster kill
 
-	echo "$0: ${funcname}: powering off all lustre servers"
+	log "${funcname}: powering off all lustre servers"
 	$DRYRUN pm -g -0 'mds||oss'
 	if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
-		echo "$0: ${funcname}: failed to power off nodes $nodelist, proceed manually" >&2
+		error "${funcname}: failed to power off nodes $nodelist, proceed manually"
 		$DRYRUN exit 2
 	fi
 
-	echo "$0: ${funcname}: powering on all lustre servers"
+	log "${funcname}: powering on all lustre servers"
 	$DRYRUN pm -g -1 'mds||oss'
 	if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
-		echo "$0: ${funcname}: failed to power on nodes $nodelist, proceed manually" >&2
+		error "${funcname}: failed to power on nodes $nodelist, proceed manually"
 		exit 2
 	fi
 
-	echo "$0: ${funcname}: waiting for lustre servers to boot"
+	log "${funcname}: waiting for lustre servers to boot"
 	sleep 60
 	wait_for_hostlist_up $nodelist 420
 
@@ -565,12 +569,12 @@ function bounce_all_nodes {
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
 
 	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
-		echo "$0: ${funcname}: rebooted nodes ($nodelist) not all $desired_toss, proceed manually" >&2
+		error "${funcname}: rebooted nodes ($nodelist) not all $desired_toss, proceed manually"
 		exit 2
 	fi
 
 	if [ $badnode_count != 0 ]; then
-		echo "$0: ${funcname}: some rebooted nodes in $nodelist have badnode, proceed manually" >&2
+		error "${funcname}: some rebooted nodes in $nodelist have badnode, proceed manually"
 		exit 2
 	fi
 
@@ -584,7 +588,7 @@ function bounce_sample_node {
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		echo "$0: bounce_sample_node: missing argument desired_toss" >&2
+		error "bounce_sample_node: missing argument desired_toss"
 		exit 2
 	fi
 
@@ -593,15 +597,15 @@ function bounce_sample_node {
 	#local sample_node=$(nodeattr -n mds | tail -n1)
 	local partner_node=$(ldev --hostname $sample_node -p)
 
-	echo "$0: bounce_sample_node: bouncing node $sample_node to test image failover"
+	log "bounce_sample_node: bouncing node $sample_node to test image failover"
 
 	local sample_node_status=$(pcs_node_status $sample_node)
 	local partner_node_status=$(pcs_node_status $partner_node)
 
-	echo "sample_node: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
+	log "sample_node: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
 
 	if [ "$partner_node_status" != "Online:" ]; then
-		echo "$0: bounce_sample_node: sample node parter ($partner_node) not Online, fix and retry" >&2
+		error "bounce_sample_node: sample node parter ($partner_node) not Online, fix and retry"
 		exit 2
 	fi
 
@@ -612,7 +616,7 @@ function bounce_sample_node {
 	wait_for_hostlist_up $sample_node 300
 
 	if [ "$(lustre_node_ready $sample_node $desired_toss)" != "yes" ]; then
-		echo "$0: bounce_sample_node: sample node ($sample_node) update failed, proceed manually" >&2
+		error "bounce_sample_node: sample node ($sample_node) update failed, proceed manually"
 		exit 2
 	fi
 
@@ -630,7 +634,7 @@ $DRYRUN cfagent -K
 if [ $(is_image_ready $desired) = "no" ]; then
 	create_image $desired
 else
-	echo "Image Ready" >&2
+	log "Image Ready"
 fi
 
 update_mgmt_nodes $desired $desired_kernel
