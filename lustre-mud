@@ -64,10 +64,11 @@ desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs
 use_iscsi=$(nodeattr -q 'mds&&iscsi')
 
 function actual_toss_version {
+	local funcname="actual_toss_version"
 	local node=$1
 
 	if [ -z "$node" ]; then
-		error "actual_toss_version: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
@@ -77,10 +78,11 @@ function actual_toss_version {
 }
 
 function running_kernel {
+	local funcname="running_kernel"
 	local node=$1
 
 	if [ -z "$node" ]; then
-		error "running_kernel: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
@@ -88,16 +90,17 @@ function running_kernel {
 }
 
 function update_required {
+	local funcname="update_required"
 	local actual=$1
 	local desired=$2
 
 	if [ -z "$actual" ]; then
-		error "update_required: missing argument actual"
+		error "$funcname: missing argument actual"
 		exit 2
 	fi
 
 	if [ -z "$desired" ]; then
-		error "update_required: missing argument desired"
+		error "$funcname: missing argument desired"
 		exit 2
 	fi
 
@@ -112,16 +115,17 @@ function update_required {
 }
 
 function want_toss_update {
+	local funcname="want_toss_update"
 	local node=$1
 	local desired=$2
 
 	if [ -z "$node" ]; then
-		error "want_toss_update: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$desired" ]; then
-		error "want_toss_update: missing argument desired"
+		error "$funcname: missing argument desired"
 		exit 2
 	fi
 
@@ -131,16 +135,17 @@ function want_toss_update {
 }
 
 function want_reboot {
+	local funcname="want_reboot"
 	local node=$1
 	local desired=$2
 
 	if [ -z "$node" ]; then
-		error "want_reboot: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$desired" ]; then
-		error "want_reboot: missing argument desired"
+		error "$funcname: missing argument desired"
 		exit 2
 	fi
 
@@ -149,16 +154,17 @@ function want_reboot {
 }
 
 function update_mgmt_node {
+	local funcname="update_mgmt_node"
 	local node=$1
 	local version=$2
 
 	if [ -z "$node" ]; then
-		error "update_mgmt_node: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$version" ]; then
-		error "update_mgmt_node: missing argument version"
+		error "$funcname: missing argument version"
 		exit 2
 	fi
 
@@ -178,10 +184,11 @@ function update_mgmt_node {
 }
 
 function reboot_node {
+	local funcname="reboot_node"
 	local node=$1
 
 	if [ -z "$node" ]; then
-		error "reboot_node: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
@@ -199,16 +206,17 @@ function reboot_node {
 # Wait until the specified host(s) are 'up' per whatsup and multi-user.target was reached
 # timeout is in seconds
 function wait_for_hostlist_up {
+	local funcname="wait_for_hostlist_up"
 	local hostlist=$1
 	local timeout=$2
 
 	if [ -z "$hostlist" ]; then
-		error "wait_for_hostlist_up: missing argument hostlist"
+		error "$funcname: missing argument hostlist"
 		exit 2
 	fi
 
 	if [ -z "$timeout" ]; then
-		error "wait_for_hostlist_up: missing argument timeout"
+		error "$funcname: missing argument timeout"
 		exit 2
 	fi
 
@@ -240,16 +248,17 @@ function wait_for_hostlist_up {
 }
 
 function update_mgmt_nodes {
+	local funcname="update_mgmt_nodes"
 	local desired_toss=$1
 	local desired_kernel=$2
 
 	if [ -z "$desired_toss" ]; then
-		error "update_mgmt_nodes: missing argument desired_toss"
+		error "$funcname: missing argument desired_toss"
 		exit 2
 	fi
 
 	if [ -z "$desired_kernel" ]; then
-		error "update_mgmt_nodes: missing argument desired_kernel"
+		error "$funcname: missing argument desired_kernel"
 		exit 2
 	fi
 
@@ -289,19 +298,20 @@ function update_mgmt_nodes {
 }
 
 function get_image_name {
+	local funcname="get_image_name"
 	local iscsi_image_count=$(nodeattr -V iscsi | sort -u | wc -l)
 	local nfsroot_image_count=$(nodeattr -V nfsroot | sort -u | wc -l)
 
 	local imgname=""
 	if [ -n "$use_iscsi" ]; then
 		if [ $iscsi_image_count -ne 1 ]; then
-			error "get_image_name: script only handles clusters with 1 iscsi image"
+			error "$funcname: script only handles clusters with 1 iscsi image"
 			exit 2
 		fi
 		imgname=$(nodeattr -V iscsi | head -n1)
 	else
 		if [ $nfsroot_image_count -ne 1 ]; then
-			error "get_image_name: script only handles clusters with 1 nfsroot image"
+			error "$funcname: script only handles clusters with 1 nfsroot image"
 			exit 2
 		fi
 		imgname=$(nodeattr -V nfsroot | head -n1 | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://')
@@ -315,7 +325,7 @@ function is_image_ready {
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		error "is_image_ready: missing argument desired_toss"
+		error "$funcname: missing argument desired_toss"
 		exit 2
 	fi
 
@@ -326,7 +336,7 @@ function is_image_ready {
 	if [ -n "$use_iscsi" ]; then
 		image_path=/tftpboot/images/${image_name}.$(arch).latest
 		if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
-			error "is_image_ready: image $image_name already loopback mounted; umount and retry"
+			error "$funcname: image $image_name already loopback mounted; umount and retry"
 			exit 2
 		fi
 	fi
@@ -375,15 +385,16 @@ function is_image_ready {
 }
 
 function create_image {
+	local funcname="create_image"
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		error "create_image: missing argument desired_toss"
+		error "$funcname: missing argument desired_toss"
 		exit 2
 	fi
 
 	if [ $(arch) != "x86_64" ]; then
-		error "create_image: script untested with arch $(arch)"
+		error "$funcname: script untested with arch $(arch)"
 		exit 2
 	fi
 
@@ -409,12 +420,13 @@ function create_image {
 	fi
 
 	if [ -z "$DRYRUN" -a $(is_image_ready $desired) = "no" ]; then
-		error "create_image: failed to validate new image"
+		error "$funcname: failed to validate new image"
 		exit 2
 	fi
 }
 
 function update_firmware {
+	local funcname="update_firmware"
 	echo $0: update_firmware: updating firmware with ib_burn_fw
 	$DRYRUN $PDSH -f 128 -Av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
 	$DRYRUN $PDSH -f 128 -Av /sbin/ib_burn_fw
@@ -424,16 +436,17 @@ function update_firmware {
 # Wait until the specified host(s) have pools imported
 # timeout is in seconds
 function wait_for_zpools_imported {
+	local funcname="wait_for_zpools_imported"
 	local hostlist=$1
 	local timeout=$2
 
 	if [ -z "$hostlist" ]; then
-		error "wait_for_hostlist_up: missing argument hostlist"
+		error "$funcname: missing argument hostlist"
 		exit 2
 	fi
 
 	if [ -z "$timeout" ]; then
-		error "wait_for_hostlist_up: missing argument timeout"
+		error "$funcname: missing argument timeout"
 		exit 2
 	fi
 
@@ -458,16 +471,17 @@ function wait_for_zpools_imported {
 # Wait until the specified host(s) have no pools imported
 # timeout is in seconds
 function wait_for_zpools_exported {
+	local funcname="wait_for_zpools_exported"
 	local hostlist=$1
 	local timeout=$2
 
 	if [ -z "$hostlist" ]; then
-		error "wait_for_hostlist_up: missing argument hostlist"
+		error "$funcname: missing argument hostlist"
 		exit 2
 	fi
 
 	if [ -z "$timeout" ]; then
-		error "wait_for_hostlist_up: missing argument timeout"
+		error "$funcname: missing argument timeout"
 		exit 2
 	fi
 
@@ -494,10 +508,11 @@ function wait_for_zpools_exported {
 }
 
 function pcs_node_status {
+	local funcname="pcs_node_status"
 	local node=$1
 
 	if [ -z "$node" ]; then
-		error "pcs_node_status: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
@@ -505,17 +520,18 @@ function pcs_node_status {
 }
 
 function lustre_node_ready {
+	local funcname="lustre_node_ready"
 	local node=$1
 	local desired_toss=$2
 	local ready="yes"
 
 	if [ -z "$node" ]; then
-		error "lustre_node_ready: missing argument node"
+		error "$funcname: missing argument node"
 		exit 2
 	fi
 
 	if [ -z "$desired_toss" ]; then
-		error "lustre_node_ready: missing argument desired_toss"
+		error "$funcname: missing argument desired_toss"
 		exit 2
 	fi
 
@@ -535,6 +551,7 @@ function lustre_node_ready {
 }
 
 function bounce_all_nodes {
+	local funcname="bounce_all_nodes"
 	local funcname="bounce_all_nodes"
 	local desired_toss=$1
 
@@ -585,10 +602,11 @@ function bounce_all_nodes {
 }
 
 function bounce_sample_node {
+	local funcname="bounce_sample_node"
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
-		error "bounce_sample_node: missing argument desired_toss"
+		error "$funcname: missing argument desired_toss"
 		exit 2
 	fi
 
@@ -605,7 +623,7 @@ function bounce_sample_node {
 	log "sample_node: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
 
 	if [ "$partner_node_status" != "Online:" ]; then
-		error "bounce_sample_node: sample node parter ($partner_node) not Online, fix and retry"
+		error "$funcname: sample node parter ($partner_node) not Online, fix and retry"
 		exit 2
 	fi
 
@@ -616,7 +634,7 @@ function bounce_sample_node {
 	wait_for_hostlist_up $sample_node 300
 
 	if [ "$(lustre_node_ready $sample_node $desired_toss)" != "yes" ]; then
-		error "bounce_sample_node: sample node ($sample_node) update failed, proceed manually"
+		error "$funcname: sample node ($sample_node) update failed, proceed manually"
 		exit 2
 	fi
 
