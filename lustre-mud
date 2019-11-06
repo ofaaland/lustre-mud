@@ -575,6 +575,7 @@ function bounce_all_nodes {
 
 	log "${funcname}: powering off all lustre servers"
 	$DRYRUN pm -g -0 'mds||oss'
+	sleep 2
 	if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
 		error "${funcname}: failed to power off nodes $nodelist, proceed manually"
 		$DRYRUN exit 2
@@ -582,6 +583,7 @@ function bounce_all_nodes {
 
 	log "${funcname}: powering on all lustre servers"
 	$DRYRUN pm -g -1 'mds||oss'
+	sleep 2
 	if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
 		error "${funcname}: failed to power on nodes $nodelist, proceed manually"
 		exit 2
