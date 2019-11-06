@@ -647,6 +647,9 @@ function bounce_sample_node {
 #desired_release=$(echo $desired | awk --field-separator - '{print $4}')
 #echo desired $desired desired_mm $desired_mm desired_release $desired_release
 
+# so our cwd doesn't disappear when we umount and restart
+cd /root
+
 # make sure we have current configs in place
 $DRYRUN cfagent -K
 
