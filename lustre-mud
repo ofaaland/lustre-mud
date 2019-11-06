@@ -4,6 +4,7 @@ set -e
 set -x
 
 PDSH="pdsh -t2 -u60"
+PDSH_LONG="pdsh -t2"
 NBD_SIZE="30G"
 #DRYRUN="echo"
 DRYRUN=""
@@ -172,7 +173,7 @@ function update_mgmt_node {
 	local tut=/admin/tut/bin/updates/${version}
 
 	if [ -x $tut ]; then
-		$DRYRUN ${PDSH} -w $node $tut
+		$DRYRUN ${PDSH_LONG} -w $node $tut
 		if [ $? -ne 0 ]; then
 			error "$tut update script failed on node $node."
 			exit 4
