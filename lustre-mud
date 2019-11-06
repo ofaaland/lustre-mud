@@ -105,6 +105,14 @@ function update_required {
 		exit 2
 	fi
 
+	# update from release candidates, even though
+	# rpmdev-vercmp says they are newer than the
+	# final release.
+	if [[ "$actual" =~ rc[0-9]$ ]]; then
+		echo "yes"
+		return
+	fi
+
 	rpmdev-vercmp "${actual}" "${desired}" >/dev/null
 	local rc=$?
 	if [ $rc -eq 12 ]; then
