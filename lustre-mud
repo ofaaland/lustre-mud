@@ -562,8 +562,8 @@ function bounce_all_nodes {
 	fi
 
 	local nodelist=$(nodeattr -q 'mds||oss')
-	log "${funcname}: stopping pacemaker"
-	$DRYRUN pcs cluster kill
+	log "${funcname}: stopping pacemaker (and lustre)"
+	$DRYRUN timeout --kill-after=10m 11m systemctl stop pacemaker
 
 	log "${funcname}: powering off all lustre servers"
 	$DRYRUN pm -g -0 'mds||oss'
