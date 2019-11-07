@@ -561,7 +561,6 @@ function lustre_node_ready {
 
 function bounce_all_nodes {
 	local funcname="bounce_all_nodes"
-	local funcname="bounce_all_nodes"
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
@@ -606,7 +605,7 @@ function bounce_all_nodes {
 		exit 2
 	fi
 
-	$DRYRUN $PDSH -w e${node} "zpool import \$(hostname)"
+	$DRYRUN $PDSH -w e${nodelist} "zpool import \$(hostname)"
 
 	$DRYRUN systemctl start pacemaker
 
