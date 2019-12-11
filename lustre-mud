@@ -3,6 +3,8 @@
 set -e
 set -x
 
+TUTBIN=/admin/tut/bin/updates
+#TUTBIN=/root/update/tut
 PDSH="pdsh -t2 -u60"
 PDSH_LONG="pdsh -t2"
 NBD_SIZE="30G"
@@ -178,11 +180,14 @@ function update_mgmt_node {
 	fi
 
 	log "UPDATING node $node to $version"
-	local tut=/admin/tut/bin/updates/${version}
+	local tut=${TUTBIN}/${version}
 
-	if [ -x $tut ]; then
-		$DRYRUN ${PDSH_LONG} -w $node $tut
-		if [ $? -ne 0 ]; then
+	if [ -f $tut ]; then
+		# stop pacemaker first as it may be updated
+		$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
+		local rc=$?
+		if [ $rc -ne 0 ]; then
 			error "$tut update script failed on node $node."
 			exit 4
 		fi
@@ -660,7 +665,7 @@ function bounce_sample_node {
 cd /root
 
 # make sure we have current configs in place
-$DRYRUN cfagent -K
+$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 
 if [ $(is_image_ready $desired) = "no" ]; then
 	create_image $desired
