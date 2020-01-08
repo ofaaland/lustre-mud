@@ -580,21 +580,30 @@ function bounce_all_nodes {
 	local nodelist=$(nodeattr -q 'mds||oss')
 	log "${funcname}: stopping pacemaker (and lustre)"
 	$DRYRUN timeout --kill-after=10m 11m systemctl stop pacemaker
+	$DRYRUN pcs cluster kill
 
 	log "${funcname}: powering off all lustre servers"
 	$DRYRUN pm -g -0 'mds||oss'
 	sleep 2
 	if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
-		error "${funcname}: failed to power off nodes $nodelist, proceed manually"
-		$DRYRUN exit 2
+		$DRYRUN pm -g -0 'mds||oss'
+		sleep 2
+		if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
+			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
+			$DRYRUN exit 2
+		fi
 	fi
 
 	log "${funcname}: powering on all lustre servers"
 	$DRYRUN pm -g -1 'mds||oss'
 	sleep 2
 	if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
-		error "${funcname}: failed to power on nodes $nodelist, proceed manually"
-		exit 2
+		$DRYRUN pm -g -1 'mds||oss'
+		sleep 2
+		if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
+			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
+			exit 2
+		fi
 	fi
 
 	log "${funcname}: waiting for lustre servers to boot"
