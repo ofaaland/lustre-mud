@@ -193,6 +193,8 @@ function update_mgmt_node {
 		fi
 		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
 		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
+		log "${funcname}: waiting for pacemaker to re-detect cluster state"
+		sleep 180
 	else
 		error "$tut update script is not executable."
 		exit 4
