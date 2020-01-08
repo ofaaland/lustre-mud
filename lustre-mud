@@ -192,6 +192,7 @@ function update_mgmt_node {
 			exit 4
 		fi
 		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
+		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
 	else
 		error "$tut update script is not executable."
 		exit 4
