@@ -215,7 +215,7 @@ function reboot_node {
 	if nodeattr $node mgmt ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
 	fi
-	$DRYRUN ${PDSH} -w e${node} 'echo b | tee /proc/sysrq-trigger'
+	$DRYRUN ${PDSH} -w e${node} reboot
 }
 
 # Wait until the specified host(s) are 'up' per whatsup and multi-user.target was reached
