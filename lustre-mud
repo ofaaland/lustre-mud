@@ -179,6 +179,8 @@ function update_mgmt_node {
 		exit 2
 	fi
 
+	# XXX TODO: Possibly detect an intalled toss RC and deal correctly
+
 	log "UPDATING node $node to $version"
 	local tut=${TUTBIN}/${version}
 
@@ -191,9 +193,11 @@ function update_mgmt_node {
 			error "$tut update script failed on node $node."
 			exit 4
 		fi
+		# XXX TODO: Maybe verify - check version
 		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
 		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
 		log "${funcname}: waiting for pacemaker to re-detect cluster state"
+		# XXX TODO: Need a wait function with timeout for this instead
 		sleep 180
 	else
 		error "$tut update script is not executable."
@@ -214,11 +218,13 @@ function reboot_node {
 	if nodeattr $node pacemaker ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
 	fi
+	# XXX TODO: detect if pcs cluster kill failed and exit
 
 	if nodeattr $node mgmt ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
 	fi
 	$DRYRUN ${PDSH} -w e${node} reboot
+	# XXX TODO: detect if reboot did not occur and exit
 }
 
 # Wait until the specified host(s) are 'up' per whatsup and multi-user.target was reached
@@ -262,6 +268,7 @@ function wait_for_hostlist_up {
 
 	if [ "$are_up" != "yes" ]; then
 		error "$hostlist not up after $timeout seconds"
+		# XXX TODO: maybe exit here
 	fi
 }
 
@@ -483,6 +490,7 @@ function wait_for_zpools_imported {
 
 	if [ "$pools_imported" != "yes" ]; then
 		error "pools not imported from $hostlist after $timeout seconds"
+		# XXX TODO exit here
 	fi
 }
 
@@ -522,6 +530,7 @@ function wait_for_zpools_exported {
 
 	if [ "$pools_exported" != "yes" ]; then
 		error "pools not exported from $hostlist after $timeout seconds"
+		# XXX TODO exit here
 	fi
 }
 
@@ -624,9 +633,10 @@ function bounce_all_nodes {
 	fi
 
 	$DRYRUN $PDSH -w e${nodelist} "zpool import \$(hostname)"
+	# XXX TODO maybe verify imported
 
 	$DRYRUN systemctl start pacemaker
-
+	# XXX TODO maybe verify pacemaker started
 }
 
 function bounce_sample_node {
@@ -671,6 +681,7 @@ function bounce_sample_node {
 
 	$DRYRUN pcs node unstandby $sample_node
 	wait_for_zpools_imported $sample_node 300
+	# XXX TODO maybe verify imported or exit
 }
 
 #desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
