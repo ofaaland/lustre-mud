@@ -201,9 +201,8 @@ function update_mgmt_node {
 
 		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
 		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
-		log "${funcname}: waiting for pacemaker to re-detect cluster state"
-		# XXX TODO: Need a wait function with timeout for this instead
-		sleep 180
+
+		wait_for_pacemaker_all_online 360
 	else
 		error "$tut update script is not executable."
 		exit 4
@@ -536,6 +535,45 @@ function wait_for_zpools_exported {
 	if [ "$pools_exported" != "yes" ]; then
 		error "pools not exported from $hostlist after $timeout seconds"
 		# XXX TODO exit here
+	fi
+}
+
+# Wait for pacemaker to report all services online
+# timeout is in seconds
+function wait_for_pacemaker_all_online {
+	local funcname="wait_for_pacemaker_all_online"
+	local timeout=$1
+
+	if [ -z "$timeout" ]; then
+		error "$funcname: missing argument timeout"
+		exit 2
+	fi
+
+	log "${funcname}: waiting for pacemaker to report all resources online"
+
+	local start=$(date +%s)
+	local end=$((start + timeout))
+
+	local problem_nodes=""
+	local pacemaker_online=""
+	while [ $(date +%s) -lt $end ]; do
+		sleep 1
+		local problem_nodes=$(pcs node status | awk '
+			(/Offline:/ || /Standby:/ || /Maintenance:/) && NF > 1 {print}
+			')
+		if [ -n "${problem_nodes}" ]; then
+			continue;
+		fi
+
+		if [ $(pcs status | grep 'ocf::' | grep -v -w Started | wc -l) -eq 0 ]; then
+			pacemaker_online="yes"
+			break;
+		fi
+	done
+
+	if [ "$pacemaker_online" != "yes" ]; then
+		error "pacemaker resources not all online after ${timeout} seconds"
+		exit 5
 	fi
 }
 
