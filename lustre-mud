@@ -679,7 +679,7 @@ function bounce_all_nodes {
 	# XXX TODO maybe verify imported
 
 	$DRYRUN systemctl start pacemaker
-	# XXX TODO maybe verify pacemaker started
+	wait_for_pacemaker_all_online 360
 }
 
 function bounce_sample_node {
