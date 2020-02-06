@@ -221,8 +221,12 @@ function reboot_node {
 	log "REBOOTING node $node"
 	if nodeattr $node pacemaker ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
+		local rc=$?
+		if [ $rc -ne 0 ]; then
+			error "pcs cluster kill failed on node $node."
+			exit 6
+		fi
 	fi
-	# XXX TODO: detect if pcs cluster kill failed and exit
 
 	if nodeattr $node mgmt ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN sync
