@@ -277,7 +277,7 @@ function wait_for_hostlist_up {
 
 	if [ "$are_up" != "yes" ]; then
 		error "$hostlist not up after $timeout seconds"
-		# XXX TODO: maybe exit here
+		exit 7
 	fi
 }
 
@@ -499,7 +499,7 @@ function wait_for_zpools_imported {
 
 	if [ "$pools_imported" != "yes" ]; then
 		error "pools not imported from $hostlist after $timeout seconds"
-		# XXX TODO exit here
+		exit 2
 	fi
 }
 
