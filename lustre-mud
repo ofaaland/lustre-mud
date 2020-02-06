@@ -681,7 +681,7 @@ function bounce_all_nodes {
 	fi
 
 	$DRYRUN $PDSH -w e${nodelist} "zpool import \$(hostname)"
-	# XXX TODO maybe verify imported
+	wait_for_zpools_imported ${nodelist} 60
 
 	$DRYRUN systemctl start pacemaker
 	wait_for_pacemaker_all_online 360
