@@ -196,6 +196,7 @@ function update_mgmt_node {
 
 		if [ $(want_toss_update ${node} ${version}) = "yes" ] ; then
 			error "$tut on $node did not change toss to ${version}."
+			error "REMINDER: cfagent && start pacemaker required"
 			exit 4
 		fi
 
@@ -738,6 +739,9 @@ function bounce_sample_node {
 
 # so our cwd doesn't disappear when we umount and restart
 cd /root
+
+# stop if pacemaker is not running and everything up
+wait_for_pacemaker_all_online 30
 
 # make sure we have current configs in place
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
