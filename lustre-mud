@@ -717,11 +717,11 @@ function bounce_sample_node {
 	$DRYRUN pcs node standby $sample_node
 	$DRYRUN wait_for_zpools_exported $sample_node 300
 	$DRYRUN pcs stonith fence $sample_node
-	sleep 60
-    # power the node back on in case it was powered off instead of rebooted by stonith
+	# XXX TODO make below more robust
+	sleep 120
+	# power the node back on in case it was powered off instead of rebooted by stonith
 	$DRYRUN pm -g -1 'mds||oss'
-	sleep 60
-	wait_for_hostlist_up $sample_node 300
+	wait_for_hostlist_up $sample_node 480
 
 	if [ "$(lustre_node_ready $sample_node $desired_toss)" != "yes" ]; then
 		error "$funcname: sample node ($sample_node) update failed, proceed manually"
