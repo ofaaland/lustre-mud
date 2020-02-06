@@ -225,6 +225,7 @@ function reboot_node {
 	# XXX TODO: detect if pcs cluster kill failed and exit
 
 	if nodeattr $node mgmt ; then
+		$DRYRUN ${PDSH} -w e${node} $DRYRUN sync
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
 	fi
 	$DRYRUN ${PDSH} -w e${node} reboot
