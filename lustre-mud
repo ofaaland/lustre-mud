@@ -194,7 +194,7 @@ function update_mgmt_node {
 			exit 4
 		fi
 
-		if want_toss_update ${node} ${version} ; then
+		if [ $(want_toss_update ${node} ${version}) = "yes" ] ; then
 			error "$tut on $node did not change toss to ${version}."
 			exit 4
 		fi
