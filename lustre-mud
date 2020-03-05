@@ -666,7 +666,7 @@ function bounce_all_nodes {
 
 	log "${funcname}: waiting for lustre servers to boot"
 	sleep 60
-	wait_for_hostlist_up $nodelist 420
+	wait_for_hostlist_up $nodelist 600
 
 	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
