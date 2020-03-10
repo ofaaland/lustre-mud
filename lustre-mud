@@ -626,8 +626,8 @@ function lustre_node_ready {
 	echo $ready
 }
 
-function update_all_nodes {
-	local funcname="update_all_nodes"
+function lustre_nodes_needing_update {
+	local funcname="lustre_nodes_needing_update"
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
@@ -636,6 +636,24 @@ function update_all_nodes {
 	fi
 
 	local nodelist=$(nodeattr -q 'mds||oss')
+
+	echo $nodelist
+}
+
+function update_lustre_nodes {
+	local funcname="update_lustre_nodes"
+	local desired_toss=$1
+	local nodelist=$2
+
+	if [ -z "$desired_toss" ]; then
+		error "${funcname}: missing argument desired_toss"
+		exit 2
+	fi
+
+	if [ -z "$nodelist" ]; then
+		error "${funcname}: missing argument nodelist"
+		exit 2
+	fi
 
 	# Check whether nodes were already updated
 	local need_update="no"
@@ -771,9 +789,12 @@ update_mgmt_nodes $desired $desired_kernel
 
 update_firmware
 
-bounce_sample_node $desired
+nodelist=$(lustre_nodes_needing_update)
+if [ "$nodelist" ] ; then
+	bounce_sample_node $desired
 
-update_all_nodes $desired
+	update_lustre_nodes $desired $nodelist
+fi
 
 exit 0
 
