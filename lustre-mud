@@ -797,6 +797,16 @@ if [ "$nodelist" ] ; then
 	update_lustre_nodes $desired $nodelist
 fi
 
+echo "All nodes appear to be updated.  Verify below:"
+echo ================================================
+echo Distro Version:
+pdsh -A distro_version | dshbak -c
+echo Running Kernel:
+pdsh -A uname -r | dshbak -c
+echo "Distro Diff"
+pdsh -A distro_diff | dshbak -c
+echo ================================================
+
 exit 0
 
 ## Stop pacemaker and then reboot all the nodes
