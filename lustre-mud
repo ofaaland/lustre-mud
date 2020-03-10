@@ -639,7 +639,7 @@ function lustre_nodes_needing_update {
 
 	# Build list of nodes not already updated
 	local need_update=""
-	for node in $(hostlist --expand $nodelist); do
+	for node in $(hostlist --expand --delimiters ' ' $nodelist); do
 		toss_update_required=$(want_toss_update ${node} ${desired_toss})
 		if [ $toss_update_required = "yes" ]; then
 			need_update="$need_update $node"
