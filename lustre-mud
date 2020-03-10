@@ -789,7 +789,7 @@ update_mgmt_nodes $desired $desired_kernel
 
 update_firmware
 
-nodelist=$(lustre_nodes_needing_update)
+nodelist=$(lustre_nodes_needing_update $desired)
 if [ "$nodelist" ] ; then
 	bounce_sample_node $desired
 
