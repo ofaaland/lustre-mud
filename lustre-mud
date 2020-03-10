@@ -703,8 +703,8 @@ function update_all_nodes {
 	wait_for_pacemaker_all_online 360
 }
 
-function update_sample_node {
-	local funcname="update_sample_node"
+function bounce_sample_node {
+	local funcname="bounce_sample_node"
 	local desired_toss=$1
 
 	if [ -z "$desired_toss" ]; then
@@ -717,19 +717,12 @@ function update_sample_node {
 	#local sample_node=$(nodeattr -n mds | tail -n1)
 	local partner_node=$(ldev --hostname $sample_node -p)
 
-	# Check whether sample node was already bounced
-	toss_update_required=$(want_toss_update ${sample_node} ${desired_toss})
-	if [ $toss_update_required = "no" ]; then
-		log "$funcname: no update of $sample_node reqd, already running toss $desired_toss"
-		return
-	fi
-
-	log "$funcname: bouncing node $sample_node to test image"
+	log "bounce_sample_node: bouncing node $sample_node to test image failover"
 
 	local sample_node_status=$(pcs_node_status $sample_node)
 	local partner_node_status=$(pcs_node_status $partner_node)
 
-	log "$funcname: sample_node $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
+	log "sample_node: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
 
 	if [ "$partner_node_status" != "Online:" ]; then
 		error "$funcname: sample node parter ($partner_node) not Online, fix and retry"
@@ -778,7 +771,7 @@ update_mgmt_nodes $desired $desired_kernel
 
 update_firmware
 
-update_sample_node $desired
+bounce_sample_node $desired
 
 update_all_nodes $desired
 
