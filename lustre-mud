@@ -674,25 +674,25 @@ function update_lustre_nodes {
 	$DRYRUN timeout --kill-after=10m 11m systemctl stop pacemaker
 	$DRYRUN pcs cluster kill
 
-	log "${funcname}: powering off all lustre servers"
-	$DRYRUN pm -g -0 'mds||oss'
+	log "${funcname}: powering off lustre servers $nodelist"
+	$DRYRUN pm -0 $nodelist
 	sleep 2
-	if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
-		$DRYRUN pm -g -0 'mds||oss'
+	if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
+		$DRYRUN pm -0 $nodelist
 		sleep 2
-		if [ $(pm -g -q 'mds||oss' | awk '/off:/ {print $NF}') != $nodelist ]; then
+		if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
 			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
 			$DRYRUN exit 2
 		fi
 	fi
 
 	log "${funcname}: powering on all lustre servers"
-	$DRYRUN pm -g -1 'mds||oss'
+	$DRYRUN pm -1 $nodelist
 	sleep 2
-	if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
-		$DRYRUN pm -g -1 'mds||oss'
+	if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
+		$DRYRUN pm -1 $nodelist
 		sleep 2
-		if [ $(pm -g -q 'mds||oss' | awk '/on:/ {print $NF}') != $nodelist ]; then
+		if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
 			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
 			exit 2
 		fi
