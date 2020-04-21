@@ -805,6 +805,8 @@ echo Running Kernel:
 pdsh -A uname -r | dshbak -c
 echo "Distro Diff"
 pdsh -A distro_diff | dshbak -c
+echo "Lustre Cluster Check"
+lustre_cluster_check -v
 echo ================================================
 
 exit 0
