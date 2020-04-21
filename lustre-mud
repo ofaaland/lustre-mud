@@ -181,7 +181,7 @@ function update_mgmt_node {
 
 	# XXX TODO: Possibly detect an intalled toss RC and deal correctly
 
-	log "UPDATING node $node to $version"
+	log "$funcname: UPDATING node $node to $version"
 	local tut=${TUTBIN}/${version}
 
 	if [ -f $tut ]; then
@@ -219,7 +219,7 @@ function reboot_node {
 		exit 2
 	fi
 
-	log "REBOOTING node $node"
+	log "$funcname: REBOOTING node $node"
 	if nodeattr $node pacemaker ; then
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
 		local rc=$?
@@ -306,7 +306,7 @@ function update_mgmt_nodes {
 	fi
 
 	for gender in altmgmt primgmt; do
-		log "Checking $gender nodes"
+		log "$funcname: Checking $gender nodes"
 
 		node=$(nodeattr -q $gender)
 		if [ -n "$node" ]; then
@@ -315,7 +315,7 @@ function update_mgmt_nodes {
 				echo $0: $node: $gender toss_update $toss_update_required from $(actual_toss_version ${node}) to $desired_toss
 				update_mgmt_node $node ${desired_toss}
 			else
-				log "$node: $gender no update reqd, already running toss $desired_toss"
+				log "$funcname: $node: $gender no update reqd, already running toss $desired_toss"
 			fi
 
 			reboot_required=$(want_reboot ${node} ${desired_kernel})
@@ -324,10 +324,10 @@ function update_mgmt_nodes {
 				reboot_node $node
 				wait_for_hostlist_up $node 300
 			else
-				log "$node: $gender no reboot reqd, already running kernel $desired_kernel"
+				log "$funcname: $node: $gender no reboot reqd, already running kernel $desired_kernel"
 			fi
 		else
-			log "No nodes with gender $gender"
+			log "$funcname: No nodes with gender $gender"
 		fi
 	done
 }
@@ -731,17 +731,17 @@ function bounce_sample_node {
 		exit 2
 	fi
 
-	# Could instead take highest numbered Online node from pcs node status output
+	# Could instead take highest numbered Online node from "pcs status nodes" output
 	local sample_node=$(nodeattr -n oss | tail -n1)
 	#local sample_node=$(nodeattr -n mds | tail -n1)
 	local partner_node=$(ldev --hostname $sample_node -p)
 
-	log "bounce_sample_node: bouncing node $sample_node to test image failover"
+	log "$funcname: bouncing node $sample_node to test image failover"
 
 	local sample_node_status=$(pcs_node_status $sample_node)
 	local partner_node_status=$(pcs_node_status $partner_node)
 
-	log "sample_node: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
+	log "$funcname: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
 
 	if [ "$partner_node_status" != "Online:" ]; then
 		error "$funcname: sample node parter ($partner_node) not Online, fix and retry"
