@@ -782,6 +782,13 @@ function bounce_sample_node {
 # so our cwd doesn't disappear when we umount and restart
 cd /root
 
+# verify links to the repo exist
+repo_rpm="/repo/toss/$(distro_version --major)/current/$(arch)/toss-release-${desired}*.rpm"
+if ! ls $repo_rpm ; then
+	error "$funcname: unable to create image, $repo_rpm does not exist"
+	exit 2
+fi
+
 # make sure we have current configs in place
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 
