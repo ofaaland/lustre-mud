@@ -12,26 +12,26 @@ NBD_SIZE="30G"
 DRYRUN=""
 
 ## Principles of operation
-# 1. Work in stages; Altmgmt, then Primgmt, then Sample, then mds, then oss
-# 2. Direct all work from primgmt via pdsh
-# 3. Track state of the set of nodes currently being worked,
-# rather than trying to identify and track state changes
-# in the entire cluster.
-# 4. Bail out when a stage fails, let admin fix/finish by hand
+# 1. Work in stages
+# 2. For each stage, check first if state change is necessary; idempotent
+# 3. Direct all work from primgmt via pdsh
+# 4. If a stage fails, bail out.  Admin must fix, then can re-run script (see #2)
 # 5. All state changes prefixed with $DRYRUN so they can be echoed instead of executed
+# 6. Should work on both iscsi and nfsroot clusters, and clusters with or without altmgmt
 
 ######## Overall Process #######
-## for my node in altmgmt primgmt; do
+## 1. update image
+## 2. for node in altmgmt primgmt; do
 ##   update $node
 ##   reboot $node
 ##   verify $node
-##
-## update image
-##
-## standby sample-node
-## reboot sample-node
-## verify sample-node
-## unstandby sample-node
+## 3. update firmware
+## 4. for sample lustre server
+#    fence node
+#    boot node
+#    verify booted node distro
+#    verify booted node starts lustre target
+## 5. reboot and verify remaining nodes
 ################################
 
 function error {
@@ -810,27 +810,3 @@ lustre_cluster_check -v
 echo ================================================
 
 exit 0
-
-## Stop pacemaker and then reboot all the nodes
-# pcs cluster kill
-# pm -0 jet[1-21]
-# pm -q jet[1-21]
-# pm -1 jet[1-21]
-# watch -n5 whatsup
-# sudo lustre_cluster_check
-
-## After all the nodes are up, start pacemaker; lustre should start cleanly
-#sudo systemctl start pacemaker
-#sleep 180
-#sudo lustre_cluster_check
-#sudo pcs status | less
-
-# expected output of lustre_cluster_check:
-#----------------
-#lquake-MDT[0000-000F],lquake-OST[0000-0003],MGS
-#----------------
-#healthy pacemaker_remote_status=active
-#----------------
-#jet21
-#----------------
-#LUSTRE_SERVICES_NOT_RUNNING pacemaker_remote_status=active
