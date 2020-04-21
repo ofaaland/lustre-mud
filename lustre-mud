@@ -669,10 +669,16 @@ function update_lustre_nodes {
 		exit 2
 	fi
 
+	local oss=$(hostlist --intersection $(nodeattr -q oss) $nodelist)
+	local mds=$(hostlist --intersection $(nodeattr -q mds) $nodelist)
+
 	# Proceeed with update
 	log "${funcname}: stopping pacemaker (and lustre)"
-	$DRYRUN timeout --kill-after=10m 11m systemctl stop pacemaker
+	# This is faster than systemctl stop pacemaker because of ordering
+	# and concurrence
 	$DRYRUN pcs cluster kill
+	$DRYRUN timeout --kill-after=6m 5m pdsh -w -f 128 e${oss} shutdown -h now
+	$DRYRUN timeout --kill-after=6m 5m pdsh -w -f 128 e${mds} shutdown -h now
 
 	log "${funcname}: powering off lustre servers $nodelist"
 	$DRYRUN pm -0 $nodelist
@@ -699,7 +705,7 @@ function update_lustre_nodes {
 	fi
 
 	log "${funcname}: waiting for lustre servers to boot"
-	sleep 60
+	sleep 180
 	wait_for_hostlist_up $nodelist 600
 
 	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
