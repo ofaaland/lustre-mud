@@ -764,7 +764,9 @@ function bounce_sample_node {
 
 	$DRYRUN pcs node unstandby $sample_node
 	wait_for_zpools_imported $sample_node 300
-	# XXX TODO maybe verify imported or exit
+
+	# Ensure lustre is started as well as pool imported
+	wait_for_pacemaker_all_online 120
 }
 
 #desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
