@@ -561,7 +561,7 @@ function wait_for_pacemaker_all_online {
 	local end=$((start + timeout))
 
 	local problem_nodes=""
-	local pacemaker_online=""
+	local pacemaker_online="no"
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
 		local problem_nodes=$(pcs node status | awk '
@@ -578,6 +578,8 @@ function wait_for_pacemaker_all_online {
 	done
 
 	if [ "$pacemaker_online" != "yes" ]; then
+		local resources=$(pcs status | grep 'ocf::' | grep -v -w Started | awk '{print $1}' | xargs)
+		log "Resources not running ('Started'): $resources"
 		error "pacemaker resources not all online after ${timeout} seconds"
 		exit 5
 	fi
