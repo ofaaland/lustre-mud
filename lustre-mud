@@ -796,10 +796,6 @@ function bounce_sample_node {
 	wait_for_pacemaker_all_online 120
 }
 
-#desired_mm=$(echo $desired | awk --field-separator - '{print $3}')
-#desired_release=$(echo $desired | awk --field-separator - '{print $4}')
-#echo desired $desired desired_mm $desired_mm desired_release $desired_release
-
 # so our cwd doesn't disappear when we umount and restart
 cd /root
 
