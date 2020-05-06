@@ -42,6 +42,13 @@ function log {
 	echo "$(date --rfc-3339=seconds) $0: $*"
 }
 
+force_mgmt_reboot=""
+if [ $# -gt 0 ] ; then
+	if [ $1 = force_mgmt_reboot ] ; then
+		force_mgmt_reboot="yes"
+	fi
+fi
+
 if ! nodeattr pacemaker ; then
 	error "only for use on Lustre clusters"
 	exit 1
@@ -319,7 +326,7 @@ function update_mgmt_nodes {
 			fi
 
 			reboot_required=$(want_reboot ${node} ${desired_kernel})
-			if [ $reboot_required = "yes" ]; then
+			if [ -n "$force_mgmt_reboot" -o $reboot_required = "yes" ]; then
 				echo $node: $gender reboot $reboot_required from $(running_kernel ${node}) to $desired_kernel
 				reboot_node $node
 				wait_for_hostlist_up $node 300
