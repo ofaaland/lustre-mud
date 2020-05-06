@@ -1,8 +1,5 @@
 #!/usr/bin/bash
 
-set -e
-set -x
-
 TUTBIN=/admin/tut/bin/updates
 #TUTBIN=/root/update/tut
 PDSH="pdsh -t2 -u60"
@@ -80,6 +77,9 @@ if [ $(id -u) -ne 0 ]; then
 	error "must be run as root"
 	exit 1
 fi
+
+set -e
+set -x
 
 desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
 desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
