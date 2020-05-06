@@ -42,10 +42,22 @@ function log {
 	echo "$(date --rfc-3339=seconds) $0: $*"
 }
 
+# Argument handling
 force_mgmt_reboot=""
 if [ $# -gt 0 ] ; then
 	if [ $1 = force_mgmt_reboot ] ; then
 		force_mgmt_reboot="yes"
+	fi
+
+	if [ $1 != force_mgmt_reboot ] ; then
+		echo "usage: $0 [force_mgmt_reboot]"
+		echo
+		echo "update a lustre server cluster to the latest production toss version.  If"
+		echo "the kernel version has not changed, the mgmt nodes will not be rebooted"
+		echo "The reboot may be forced with the force_mgmt_reboot argument."
+		echo
+		error "Unknown argument '$1'"
+		exit 1
 	fi
 fi
 
