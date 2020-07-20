@@ -1,0 +1,367 @@
+#!/bin/bash
+###########################################################################
+# $URL: file:///var/svn/cfengine3/stateless/activate_iscsi $
+# $Author: tdhooge $
+# $Date: 2019-08-13 09:50:29 -0700 (Tue, 13 Aug 2019) $
+# $Rev: 19877 $
+###########################################################################
+
+set -x
+
+if ( ! nodeattr primgmt ) ; then
+  echo "Please run on primgmt node only"
+  exit 1
+fi
+
+if [ $(id -u) -ne 0 ]; then
+  echo "$0: You must become root before activating image" >&2
+  exit 1
+fi
+
+umask 022
+
+PATH=/sbin:/bin:/usr/bin:/usr/sbin:/tmp
+node=""
+
+multipath=0
+
+# options
+declare -r prog=${0##*/}
+declare -r long_opts="image:,node:,help"
+declare -r short_opts="i:n:h"
+declare -r getopt="/usr/bin/getopt -u"
+declare -r usage="\
+\n\
+USAGE: $prog -i image\n\
+   -i, --image name       Image name\n\
+   -n, --node name	  Specifc node name to use for GENDERS_HOSTNAME\n\
+   -h, --help             Display usage message\n"
+
+die () {
+    echo -e "$prog: $@" >&2
+    exit 1
+}
+
+usage ()  {
+    echo -e "$usage"
+    exit 0
+}
+
+GETOPT=`$getopt -o $short_opts -l $long_opts -n $prog -- $@`
+
+if [ $? != 0 ] ; then
+    die "$usage"
+fi
+
+eval set -- "$GETOPT"
+while true; do
+  case "$1" in 
+    -i|--image)  image=$2     ; shift 2 ;;
+    -n|--node)   node=$2      ; shift 2 ;;
+    -h|--help)   usage                  ;;
+    --)          shift ; break          ;;
+    *)           die "$usage"           ;;
+  esac
+done
+
+[ ${image} ] || die "$usage"
+
+# generic variables
+images=/tftpboot/images
+local_files=/tmp/local.$$
+arch=`uname -m`
+
+
+image_name=`ls -l ${images}/${image}.${arch}.latest | awk '{print $NF}'`
+
+# don't run if image has been activated before
+[ -f ${images}/.${image_name} ] && die "${image_name} is already activated"
+
+if [[ $image_name =~ ^.*\.img$  ]]; then
+  # image_mnt is image_name less .img
+  image_mnt=${image_name%%.img}
+  echo "image_mnt is ${image_mnt}"
+  image_dir="${images}/${image_mnt}"
+  if [ ! -d ${image_dir} ]; then
+    die "Image dir $image_dir does not exist. Was it created?"
+  fi
+  if (mount |egrep -q "[[:space:]]${image_dir}[[:space:]]" ); then
+    if (mount |egrep -q "[[:space:]]${image_dir}[[:space:]].*ro.*" ) ; then
+      umount -f ${image_dir}
+      mount -o rw ${images}/${image_name} ${image_dir}
+    fi
+  else
+    mount -o rw ${images}/${image_name} ${image_dir}
+  fi
+else
+  die "$image_name not a nbd"
+fi
+
+# make sure image permission is ok
+chmod 600 ${images}/${image_name}
+
+chaos_script="${local_files}/chaos_script.$$"
+
+link="${image}.${arch}"
+img_link="${link}.img"
+primgmt=`nodeattr -q primgmt`
+mgmt_nodes=`nodeattr -q mgmt -X primgmt`
+# A few clusters don't have an internal infiniband interconnect; prepend e if needed.
+# Lustre clusters never have internal IB, so automatically use mgmt Ethernet on them.
+if [[ $mgmt -eq 1 ]] || ( nodeattr lustremgmt ) || ( nodeattr dsg ); then
+  primgmt="e${primgmt}"
+fi
+
+# location for temp files
+mkdir -p ${local_files}
+
+if [ -z ${image_name} ] ; then
+  echo "could not find image of type $image in ${images}"
+  exit 1
+fi
+
+# add .nfsroot/.stateless to the to /etc
+# for /sbin/runscript support (stout)
+# .nfsroot will go away, eventually to be
+# replaced by .stateless. 
+touch ${image_dir}/etc/.nfsroot
+touch ${image_dir}/etc/.stateless
+
+# stuff we need in the image to make it work
+cp -a /etc/hosts ${image_dir}/etc/
+cp -a /etc/securetty ${image_dir}/etc/
+cp -a /etc/genders ${image_dir}/etc/
+cp -a /etc/passwd ${image_dir}/etc/
+cp -a /etc/group ${image_dir}/etc/
+cp -a /etc/localtime ${image_dir}/etc/
+mkdir -p -m 700 ${image_dir}/var/cfengine/inputs
+cp -a /var/cfengine/inputs/* ${image_dir}/var/cfengine/inputs/
+
+tmp_image=`echo ${image} | sed s/-.*-[0-9]*//`
+
+iscsihost=`nodeattr -n iscsi | head -1`
+if [ -z ${iscsihost} ] ; then
+  echo "WARNING: possibly wrong activate script used"
+  echo "  No nodes have gender iscsi. Did you mean to run activate_nfsroot?"
+fi
+
+if [ -z ${node} ] ; then
+  confighost=`nodeattr -n iscsi | head -1`
+  if [ ! -z "$confighost" ] ; then
+    echo "export GENDERS_HOSTNAME=${confighost}" >> $chaos_script
+  fi
+else
+  echo "export GENDERS_HOSTNAME=${node}" >> $chaos_script
+fi
+
+cat << EOF >> $chaos_script
+[ ! -d /tmp/\${USER} ] && mkdir /tmp/\${USER}
+[ ! -d /var/tmp/\${USER} ] && mkdir /var/tmp/\${USER}
+rm /etc/yum.repos.d/*
+rm -f /etc/toss/extra.*
+rm -f /etc/toss/missing.*
+cfagent -f /var/cfengine/inputs/stateless/cf.iscsi.conf
+chkconfig cerebrod on
+chkconfig rhnsd off
+chkconfig slurmd off
+chkconfig splunk off
+systemctl disable slurmd
+systemctl disable slurmctld
+systemctl set-default multi-user.target
+systemctl enable toss-bootstrap.service
+systemctl enable toss-config.target
+rm -rf /var/tmp
+ln -sf /tmp /var/tmp
+/sbin/ldconfig
+/usr/sbin/prelink -ua > /dev/null 2>&1
+/usr/bin/rpm --import /var/cfengine/inputs/operating_systems/toss/3/rpm_keys/*
+rm -rf /var/cfengine/inputs/*
+EOF
+
+# copy script in and run it
+cp ${chaos_script} ${image_dir}/script.$$
+chroot ${image_dir} /bin/bash /script.$$
+rm ${image_dir}/script.$$
+
+# Uninstall rpms in /etc/toss/missing* that shouldn't be there
+# We should not uninstall if there are dependencies not listed
+# /etc/toss/missing*
+to_remove=`chroot ${image_dir} distro_diff | awk '/^+/ {print $2}' | \
+           paste -s -d " "`
+
+if [ ! -z "${to_remove}" ] ; then
+  yum -y --installroot=${image_dir} --setopt=remove_leaf_only=1 remove ${to_remove}
+fi
+
+# Install missing rpms
+missing=`chroot ${image_dir} distro_diff | awk '/^-/ {print $2}' | \
+         paste -s -d " "`
+
+if [ ! -z "${missing}" ] ; then
+  yum -y --installroot=${image_dir} install ${missing}
+fi
+
+# make sure krb5 is up to date
+yum -y --installroot=${image_dir} update krb5*
+yum -y --installroot=${image_dir} update singularity
+
+# update rpms, likely extra.* files have updates
+maybe_udpate=`chroot ${image_dir} distro_diff | awk '/^v/ {print $4}' | \
+         paste -s -d " "`
+if [ ! -z "${maybe_udpate}" ] ; then
+  yum -y --installroot=${image_dir} update ${maybe_udpate}
+fi
+
+
+# make sure netroot stuff (initramfs, pxelinux.cfg, etc.) is rebuilt
+# check that netroot is also installed
+if [ $(arch) == x86_64 ]; then
+  chroot ${image_dir} rpm -q netroot > /dev/null || die "Netroot package is not installed.  Install and re-run activate."
+fi
+
+# FIXME:  Hack for setting default kernel links (vmlinuz and initramfs symlinks) on aarch64.  On x86_64 this is done with netroot (netroot-setdefault), but netroot is not built for aarch64 so we have to do it here.
+if [ $(arch) == "aarch64" ] || [ $(arch) == "ppc64le" ] ; then
+  kver=$(basename ${image_dir}/boot/vmlinuz-[1-9]*|sed -e 's/vmlinuz-//')
+  pushd ${image_dir}/boot > /dev/null 2>&1
+  ln -sf vmlinuz-${kver} vmlinuz
+  ln -sf initramfs-${kver}.img initramfs
+  popd > /dev/null 2>&1
+fi
+
+wwn=`dd if=${images}/${image_name} bs=1M count=1 status=none |sha256sum|cut -c 1-36|sed -e "s/./-/9" -e "s/./-/14"  -e "s/./-/19"  -e "s/./-/24"`
+wwid=`echo -n 36001405 && echo ${wwn} | sed s/-//g |cut -c 1-25`
+if [ $multipath -ne 0 ]; then
+    # create multipath alias
+    echo ""
+    echo "Creating multipath.conf ..."
+    echo ""
+    pushd ${image_dir}/etc >/dev/null
+    cat << EOF > multipath.conf
+defaults {
+        user_friendly_names yes
+        find_multipaths yes
+	path_selector "service-time 0"
+	path_grouping_policy failover
+	failback immediate
+	no_path_retry fail
+}
+multipaths {
+        multipath {
+                wwid                    WWID
+                alias                   rootdev
+        }
+}
+blacklist {
+}
+
+EOF
+    sed --in-place s%WWID%${wwid}% multipath.conf
+
+    popd >/dev/null
+else
+    echo "SKIPPING MULTIPATH CONFIG"
+fi
+
+# Fix up initiator
+cluster=`nodeattr -v cluster`
+echo "InitiatorName=iqn.2006-04.gov.llnl:lc.${cluster}" >  ${image_dir}/etc/iscsi/initiatorname.iscsi
+chmod 644 ${image_dir}/etc/iscsi/initiatorname.iscsi
+
+multipath_dracut=""
+if [ $multipath -ne 0 ]; then
+    multipath_dracut="multipath"
+else
+    echo "SKIPPING DRACUT MULTIPATH CONFIG"
+fi
+
+# add iscsi stuff
+echo ""
+echo "Adding iscsi / $multipath_dracut dracut modules ..."
+echo ""
+mount -t proc none ${image_dir}/proc
+mount -t sysfs none ${image_dir}/sys
+SM=`chroot ${image_dir} rpm -ql kernel |grep System.map |head -1`
+VER=`echo $SM |sed s/.*System.map-//`
+chroot ${image_dir} depmod -a -F ${SM} ${VER}
+chroot ${image_dir} dracut -N --add "iscsi $multipath_dracut" /boot/initramfs -force ${VER}
+chroot ${image_dir} /sbin/restorecon -R /
+umount ${image_dir}/sys
+umount ${image_dir}/proc
+
+# ensure the initramfs images have correct perms 
+/bin/chmod 644 ${image_dir}/boot/init* 
+
+# reset the file context on the /var/run symlink
+chroot ${image_dir} setfiles /etc/selinux/targeted/contexts/files/file_contexts /var/run
+chroot ${image_dir} setfiles /etc/selinux/targeted/contexts/files/file_contexts /etc
+
+# clear out machine-id on stateless to ensure a unique one is generated on boot.
+chroot ${image_dir} /bin/bash -c "echo '' > /etc/machine-id"
+
+##########
+# Clean up
+##########
+rm -f ${chaos_script}
+rm -rf ${local_files}
+
+# make sure passwd files are up to date in /var/cfengine/inputs/nfsroot_etc
+if nodeattr cfhost ; then
+    mkdir -m 750 -p /var/cfengine/inputs/nfsroot_etc/
+    cp -a /etc/{passwd,group,shadow,gshadow} /var/cfengine/inputs/nfsroot_etc/
+    # We need MDS nodes to immediately get the full, 
+    # unified passwd file on bootup
+    # instead of waiting for dist_passwd to run.
+    if nodeattr lustre_passwdhost ; then
+        cp -p /usr/local/users/{passwd,group,shadow,gshadow} /var/cfengine/inputs/nfsroot_etc/
+    fi
+fi
+
+mkdir -p ${images}/${image}/boot
+rm -f ${images}/${image}/boot/{initramfs,vmlinuz}
+rsync -aL ${image_dir}/boot/initramfs ${images}/${image}/boot/initramfs
+rsync -aL ${image_dir}/boot/vmlinuz ${images}/${image}/boot/vmlinuz
+
+if [ $arch == "x86_64" ]; then
+  rsync -aL ${image_dir}/boot/efi/EFI/redhat/grubx64.efi ${images}/${image}/boot/grubx64.efi 
+  chmod 755 ${images}/${image}/boot/grubx64.efi
+elif [ $arch == "aarch64" ]; then
+  rsync -aL ${image_dir}/boot/efi/EFI/redhat/grubaa64.efi ${images}/${image}/boot/grubaa64.efi 
+  chmod 755 ${images}/${image}/boot/grubaa64.efi
+fi
+umount -f ${image_dir}
+
+# Sync image to all mgmt nodes if diskless node
+  if [ ! -z ${mgmt_nodes} ] ; then
+    if ( ! pdsh -w ${mgmt_nodes} mount ${primgmt}:${images} /mnt ) ; then
+      echo "mount failed from other mgmt nodes, not rsync'ing"
+    else
+	echo "rsync'ing ${image_name} to ${mgmt_nodes}"
+	pdsh -w ${mgmt_nodes} rsync -a --delete /mnt/${image_name} \
+		${images}/${image_name}
+	pdsh -w ${mgmt_nodes} rsync -a --delete /mnt/${image}/ \
+		${images}/${image}/
+	pdsh -w ${mgmt_nodes} umount /mnt
+    fi
+  fi
+
+tmp_image=`echo ${image_name} |sed -e "s/.img$//" -e "s/_/-/"`
+pdsh -g mgmt /tftpboot/scripts/iscsi-efi-config -i ${tmp_image}
+pdsh -g mgmt /tftpboot/scripts/iscsi-pxe-config -i ${tmp_image} 
+pdsh -g mgmt /tftpboot/scripts/iscsi-image-config -r ${images}/${image_name}
+pdsh -g mgmt /tftpboot/scripts/iscsi-image-config -s ${wwn} -a ${images}/${image_name}
+pdsh -g mgmt 'test -d /localdisk && cp -a /etc/target/saveconfig.json /localdisk'
+
+if ( pdsh -g mgmt "/tftpboot/scripts/iscsi-image-config -l | grep ${images}/${image_name} || echo nogood" |grep -q nogood ) ; then
+  pdsh -g mgmt '/tftpboot/scripts/iscsi-image-config -r ${images}/${image_name}'
+  exit 1
+fi
+
+# make things right
+#pdsh -g mgmt /sbin/restorecon -R ${images}/${image_name}
+pdsh -g mgmt /sbin/restorecon -R ${images}/${image}
+pdsh -g mgmt /sbin/restorecon ${images}/\*
+
+# this image is now in use, don't reactivate it, things will go bad 
+# if nodes are using it
+touch ${images}/.${image_name}
+
