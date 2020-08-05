@@ -844,9 +844,8 @@ wait_for_pacemaker_all_online 30
 update_firmware
 
 nodelist=$(lustre_nodes_needing_update $desired)
-if [ "$nodelist" ] ; then
+if [ -n "$nodelist" ] ; then
 	bounce_sample_node $desired
-
 	update_lustre_nodes $desired $nodelist
 fi
 
