@@ -4,9 +4,10 @@
 ## 1. create image
 ## 2. for node in altmgmt primgmt; do
 ##   update $node
+##   update IB firware on $node
 ##   reboot $node
 ##   verify $node
-## 3. update firmware
+## 3. update IB firmware on lustre nodes
 ## 4. for sample lustre server
 #    fence node
 #    boot node
@@ -227,6 +228,9 @@ function update_mgmt_node {
 		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
 
 		wait_for_pacemaker_all_online 360
+
+		log "$funcname: node $node updating IB firmware"
+		$DRYRUN ${PDSH_LONG} -w $node /sbin/ib_burn_fw
 	else
 		error "$tut update script is not executable."
 		exit 4
@@ -486,9 +490,9 @@ function create_image {
 function update_firmware {
 	local funcname="update_firmware"
 	echo $0: update_firmware: updating firmware with ib_burn_fw
-	$DRYRUN $PDSH -f 128 -Av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
-	$DRYRUN $PDSH -f 128 -Av /sbin/ib_burn_fw
-	$DRYRUN $PDSH -f 128 -Av -X cfhost umount /usr/share/ib_firmware
+	$DRYRUN $PDSH -f 128 -av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
+	$DRYRUN $PDSH -f 128 -av /sbin/ib_burn_fw
+	$DRYRUN $PDSH -f 128 -av -X cfhost umount /usr/share/ib_firmware
 }
 
 # Wait until the specified host(s) have pools imported
