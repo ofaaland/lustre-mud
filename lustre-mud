@@ -802,12 +802,14 @@ function bounce_sample_node {
 
 summarize_status() {
 	echo ================================================
+	echo Up/Down Nodes:
+	whatsup
 	echo Distro Version:
-	pdsh -A distro_version | dshbak -c
+	pdsh -Av distro_version | dshbak -c
 	echo Running Kernel:
-	pdsh -A uname -r | dshbak -c
+	pdsh -Av uname -r | dshbak -c
 	echo "Distro Diff"
-	pdsh -A distro_diff | dshbak -c
+	pdsh -Av distro_diff | dshbak -c
 	echo "Lustre Cluster Check"
 	lustre_cluster_check -v
 	echo ================================================
