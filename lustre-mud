@@ -1,23 +1,7 @@
 #!/usr/bin/bash
 
-TUTBIN=/admin/tut/bin/updates
-#TUTBIN=/root/update/tut
-PDSH="pdsh -t2 -u60"
-PDSH_LONG="pdsh -t2"
-NBD_SIZE="30G"
-#DRYRUN="echo"
-DRYRUN=""
-
-## Principles of operation
-# 1. Work in stages
-# 2. For each stage, check first if state change is necessary; idempotent
-# 3. Direct all work from primgmt via pdsh
-# 4. If a stage fails, bail out.  Admin must fix, then can re-run script (see #2)
-# 5. All state changes prefixed with $DRYRUN so they can be echoed instead of executed
-# 6. Should work on both iscsi and nfsroot clusters, and clusters with or without altmgmt
-
 ######## Overall Process #######
-## 1. update image
+## 1. create image
 ## 2. for node in altmgmt primgmt; do
 ##   update $node
 ##   reboot $node
@@ -28,8 +12,28 @@ DRYRUN=""
 #    boot node
 #    verify booted node distro
 #    verify booted node starts lustre target
-## 5. reboot and verify remaining nodes
+## 5. stop pacemaker and umount lustre on all nodes
+## 6. reboot and verify remaining nodes
+## 7. restart pacemaker to restart lustre
 ################################
+
+#### Principles of operation ###
+# 1. Work in stages
+# 2. For each stage, check first if state change is necessary; idempotent
+# 3. Direct all work from primgmt via pdsh
+# 4. If a stage fails, bail out.  Admin must fix, then can re-run script (see #2)
+# 5. All state changes prefixed with $DRYRUN so they can be echoed instead of executed
+# 6. Should work on both iscsi and nfsroot clusters, and clusters with or without altmgmt
+################################
+
+
+TUTBIN=/admin/tut/bin/updates
+#TUTBIN=/root/update/tut
+PDSH="pdsh -t2 -u60"
+PDSH_LONG="pdsh -t2"
+NBD_SIZE="30G"
+#DRYRUN="echo"
+DRYRUN=""
 
 function error {
 	echo "$(date --rfc-3339=seconds) $0: ERROR $*" >&2
@@ -795,6 +799,10 @@ function bounce_sample_node {
 	# Ensure lustre is started as well as pool imported
 	wait_for_pacemaker_all_online 120
 }
+
+##
+## Main
+##
 
 # so our cwd doesn't disappear when we umount and restart
 cd /root
