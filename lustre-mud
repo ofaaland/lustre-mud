@@ -800,6 +800,19 @@ function bounce_sample_node {
 	wait_for_pacemaker_all_online 120
 }
 
+summarize_status() {
+	echo ================================================
+	echo Distro Version:
+	pdsh -A distro_version | dshbak -c
+	echo Running Kernel:
+	pdsh -A uname -r | dshbak -c
+	echo "Distro Diff"
+	pdsh -A distro_diff | dshbak -c
+	echo "Lustre Cluster Check"
+	lustre_cluster_check -v
+	echo ================================================
+}
+
 ##
 ## Main
 ##
@@ -837,16 +850,17 @@ if [ "$nodelist" ] ; then
 	update_lustre_nodes $desired $nodelist
 fi
 
-echo "All nodes appear to be updated.  Verify below:"
-echo ================================================
-echo Distro Version:
-pdsh -A distro_version | dshbak -c
-echo Running Kernel:
-pdsh -A uname -r | dshbak -c
-echo "Distro Diff"
-pdsh -A distro_diff | dshbak -c
-echo "Lustre Cluster Check"
-lustre_cluster_check -v
-echo ================================================
+nodelist=$(lustre_nodes_needing_update $desired)
+exit_code=0
+if [ -n "$nodelist" ] ; then
+	echo "WARNING: Nodes were not updated ($nodelist)."
+	echo "Verify below:"
+	exit_code=1
+else
+	echo "All nodes appear to be updated.  Verify below:"
+	exit_code=0
+fi
 
-exit 0
+summarize_status | less
+
+exit $exit_code
