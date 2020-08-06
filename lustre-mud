@@ -833,7 +833,8 @@ if ! ls $repo_rpm ; then
 	exit 2
 fi
 
-log "start timestamp $(date +%s)"
+start_timestamp=$(date +%s)
+log "start timestamp $start_timestamp"
 
 # make sure we have current configs in place
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
@@ -870,6 +871,6 @@ fi
 
 summarize_status | less
 
-log "end timestamp $(date +%s)"
+log "end timestamp $(date +%s) duration $(( $(date +%s) - start_timestamp ))"
 
 exit $exit_code
