@@ -676,7 +676,6 @@ function lustre_nodes_needing_update {
 	done
 
 	if [ -z "$need_update" ]; then
-		log "$funcname: no update of $nodelist reqd, already running toss $desired_toss"
 		echo ""
 	else
 		hostlist $need_update
@@ -856,6 +855,8 @@ nodelist=$(lustre_nodes_needing_update $desired)
 if [ -n "$nodelist" ] ; then
 	bounce_sample_node $desired
 	update_lustre_nodes $desired $nodelist
+else
+	log "lustre servers already running toss $desired_toss"
 fi
 
 nodelist=$(lustre_nodes_needing_update $desired)
