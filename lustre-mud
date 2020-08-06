@@ -823,6 +823,9 @@ summarize_status() {
 ## Main
 ##
 
+start_timestamp=$(date +%s)
+log "start timestamp $start_timestamp"
+
 # so our cwd doesn't disappear when we umount and restart
 cd /root
 
@@ -832,9 +835,6 @@ if ! ls $repo_rpm ; then
 	error "$funcname: unable to create image, $repo_rpm does not exist"
 	exit 2
 fi
-
-start_timestamp=$(date +%s)
-log "start timestamp $start_timestamp"
 
 # make sure we have current configs in place
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
