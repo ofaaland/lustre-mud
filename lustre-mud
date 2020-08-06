@@ -860,6 +860,7 @@ else
 	log "lustre servers already running toss $desired_toss"
 fi
 
+# verify that everything was updated
 nodelist=$(lustre_nodes_needing_update $desired)
 exit_code=0
 if [ -n "$nodelist" ] ; then
