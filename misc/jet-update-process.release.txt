@@ -2,35 +2,37 @@
 set -x
 set -e
 
-lustre=lustre_2.10
-tut_base="3.5-5"
-version="3.5-5rc4"
+lustre=lustre_2.12
+tut_base="3.7-1"
+version="3.7-1rc1"
 # tut lives in /admin/tut/bin/updates
 
 # Reference is most recent update doc in /usr/admin/docs
 #less /usr/admin/docs/toss3.3-1_update 
 # Below are based on update doc
 
-# create the image
-#echo XXX =========================
-#echo XXX =========================
-#echo XXX PUT BACK create_yum_image
-#echo XXX =========================
-#echo XXX =========================
-export yum_options="--disablerepo=*lustre_2.8* --disablerepo=*lustre_2.12*" 
-# no extra yum related options required to pick up production release
-create_yum_image -i lustre base netroot x86_64 ${lustre} &&  /tftpboot/scripts/activate_image -i lustre -l && echo "IMAGE READY"
-
 # follow instructions to update firmware if necessary
 
 # stop pacemaker so we can reboot primgmt node
 pcs cluster kill
 
-# set up yum.repos.d to know about the release candidate
-yum clean all
-grep -A1 ${version} /repo/toss/toss.local.repo | sed 's/^--$/ /' | tee /etc/yum.repos.d/toss-rc.repo
-yum-config-manager --enable ${version}
-yum-config-manager --enable ${version}-${lustre}
+##
+## Setup to pick up RCs
+##
+if /bin/true; then
+    # disable the existing "current" toss repos
+    sed --in-place 's/enabled=1/enabled=0/' /etc/yum.repos.d/toss.repo
+    sed --in-place 's/enabled=1/enabled=0/' /etc/yum.repos.d/lustre_2.12.repo
+
+    # set up yum.repos.d to know about the release candidate
+    yum clean all
+    grep -A1 ${version} /repo/toss/toss.local.repo | sed 's/^--$/ /' | tee /etc/yum.repos.d/toss-rc.repo
+    yum-config-manager --enable ${version}
+    yum-config-manager --enable ${version}-${lustre}
+fi
+
+# create the image
+create_yum_image -i lustre base netroot x86_64 ${lustre} &&  /tftpboot/scripts/activate_image -i lustre -l && echo "IMAGE READY"
 
 # create a tut script named after version we are updating mgmt node to, run it
 cd /root/update/tut/
