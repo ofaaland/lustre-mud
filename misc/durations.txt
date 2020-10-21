@@ -1,0 +1,4 @@
+Machine	Date	Phase	Start	End	Duration(m)	Notes
+zwicky	2020-08-04	1	x	19:42	
+zwicky	2020-08-04	2	x	22:23	x	nodes-failed-up
+
