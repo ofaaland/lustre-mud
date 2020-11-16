@@ -1,33 +1,5 @@
 #!/usr/bin/bash
 
-######## Overall Process #######
-## 1. create image
-## 2. for node in altmgmt primgmt; do
-##   update $node
-##   update IB firware on $node
-##   reboot $node
-##   verify $node
-## 3. update IB firmware on lustre nodes
-## 4. for sample lustre server
-#    fence node
-#    boot node
-#    verify booted node distro
-#    verify booted node starts lustre target
-## 5. stop pacemaker and umount lustre on all nodes
-## 6. reboot and verify remaining nodes
-## 7. restart pacemaker to restart lustre
-################################
-
-#### Principles of operation ###
-# 1. Work in stages
-# 2. For each stage, check first if state change is necessary; idempotent
-# 3. Direct all work from primgmt via pdsh
-# 4. If a stage fails, bail out.  Admin must fix, then can re-run script (see #2)
-# 5. All state changes prefixed with $DRYRUN so they can be echoed instead of executed
-# 6. Should work on both iscsi and nfsroot clusters, and clusters with or without altmgmt
-################################
-
-
 TUTBIN=/admin/tut/bin/updates
 #TUTBIN=/root/update/tut
 PDSH="pdsh -t2 -u60"
@@ -35,6 +7,49 @@ PDSH_LONG="pdsh -t2"
 NBD_SIZE="30G"
 #DRYRUN="echo"
 DRYRUN=""
+
+function usage {
+cat <<END_OF_USAGE
+	usage: $0 [force_mgmt_reboot | describe]
+
+	update a lustre server cluster to the latest production toss version.  If
+	the kernel version has not changed, the mgmt nodes will not be rebooted
+
+	    describe          : describe the update process in detail and exit.
+	    force_mgmt_reboot : reboot mgmt nodes even if no kernel change.
+END_OF_USAGE
+}
+
+function describe {
+cat <<END_OF_DESCRIPTION
+	###### Overall Process #######
+	 1. create image
+	 2. for node in altmgmt primgmt; do
+	   update \$node
+	   update IB firware on \$node
+	   reboot \$node
+	   verify \$node
+	 3. update IB firmware on lustre nodes
+	 4. for sample lustre server
+	   fence node
+	   boot node
+	   verify booted node distro
+	   verify booted node starts lustre target
+	 5. stop pacemaker and umount lustre on all nodes
+	 6. reboot and verify remaining nodes
+	 7. restart pacemaker to restart lustre
+	##############################
+
+	## Principles of operation ###
+	1. Work in stages
+	2. For each stage, check first if state change is necessary; idempotent
+	3. Direct all work from primgmt via pdsh
+	4. If a stage fails, bail out.  Admin must fix, then can re-run script (see #2)
+	5. All state changes prefixed with \$DRYRUN so they can be echoed instead of executed
+	6. Should work on both iscsi and nfsroot clusters, and clusters with or without altmgmt
+	##############################
+END_OF_DESCRIPTION
+}
 
 function error {
 	echo "$(date --rfc-3339=seconds) $0: ERROR $*" >&2
@@ -49,14 +64,17 @@ force_mgmt_reboot=""
 if [ $# -gt 0 ] ; then
 	if [ $1 = force_mgmt_reboot ] ; then
 		force_mgmt_reboot="yes"
+	elif [ $1 = describe ] ; then
+		usage
+		echo
+		describe
+		echo
+		error "Nothing updated."
+		exit 1
 	fi
 
 	if [ $1 != force_mgmt_reboot ] ; then
-		echo "usage: $0 [force_mgmt_reboot]"
-		echo
-		echo "update a lustre server cluster to the latest production toss version.  If"
-		echo "the kernel version has not changed, the mgmt nodes will not be rebooted"
-		echo "The reboot may be forced with the force_mgmt_reboot argument."
+		usage
 		echo
 		error "Unknown argument '$1'"
 		exit 1
