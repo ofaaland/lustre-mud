@@ -7,6 +7,7 @@
 ###########################################################################
 
 TUTBIN=/admin/tut/bin/updates
+LOGBASE=/root/lustre-mud
 PDSH="pdsh -t2 -u60"
 PDSH_MEDIUM="pdsh -t2 -u300"
 PDSH_LONG="pdsh -t2"
@@ -57,12 +58,22 @@ cat <<END_OF_DESCRIPTION
 END_OF_DESCRIPTION
 }
 
+opt_logfile="${LOGBASE}/lustre-mud.$(date +%s).log"
+
+function setup_log {
+	mkdir -f "$LOGBASE"
+	echo "$(date --rfc-3339=seconds) $0: Start" > "$opt_logfile" || {
+		echo "ERROR: Unable to create log file: $!"
+		exit 1
+	}
+}
+
 function error {
-	echo "$(date --rfc-3339=seconds) $0: ERROR $*" >&2
+	echo "$(date --rfc-3339=seconds) $0: ERROR $*" >&2 | tee -a "$opt_logfile"
 }
 
 function log {
-	echo "$(date --rfc-3339=seconds) $0: $*"
+	echo "$(date --rfc-3339=seconds) $0: $*" | tee -a "$opt_logfile"
 }
 
 # Argument handling
