@@ -7,7 +7,6 @@
 ###########################################################################
 
 TUTBIN=/admin/tut/bin/updates
-#TUTBIN=/root/update/tut
 PDSH="pdsh -t2 -u60"
 PDSH_MEDIUM="pdsh -t2 -u300"
 PDSH_LONG="pdsh -t2"
