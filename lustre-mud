@@ -442,7 +442,7 @@ function is_image_ready {
 
 	local image_name=$(get_image_name)
 	local image_path=/tftpboot/images/${image_name}.$(arch)
-	local image_ready="no"
+	local image_ready=1
 
 	log "$funcname: checking image $image_name for readiness: use_iscsi $use_iscsi"
 
@@ -478,7 +478,7 @@ function is_image_ready {
 			if [ $image_version = $desired_toss ]; then
 				local image_diff=$(chroot $mount_path distro_diff | wc -l)
 				if [ $image_diff -lt 30 ]; then
-					image_ready="yes"
+					image_ready=0
 					has_big_diff="no"
 				fi
 			fi
@@ -486,12 +486,12 @@ function is_image_ready {
 			# Check that it's been activated
 			if [ -n "$use_iscsi" ]; then
 				if [ ! -f /tftpboot/images/.$real_image_name ]; then
-					image_ready="no"
+					image_ready=1
 					is_activated="no"
 				fi
 			else
 				if [ ! -f ${image_path}/etc/passwd ]; then
-					image_ready="no"
+					image_ready=1
 					is_activated="no"
 				fi
 			fi
@@ -505,8 +505,8 @@ function is_image_ready {
 		fi
 	fi
 
-	log "$funcname: image $image_name ready $image_ready"
-	echo $image_ready
+	log "$funcname: image $image_name ready $image_ready (0 is yes, 1 is no)"
+	return $image_ready
 }
 
 function create_image {
@@ -545,9 +545,11 @@ function create_image {
 		$DRYRUN /tftpboot/scripts/activate_image -i ${image_name} -l
 	fi
 
-	if [ -z "$DRYRUN" -a $(is_image_ready $desired) = "no" ]; then
-		error "$funcname: failed to validate new image"
-		exit 2
+	if [ -z "$DRYRUN" ]; then
+        if ! is_image_ready $desired; then
+            error "$funcname: failed to validate new image"
+            exit 2
+        fi
 	fi
 }
 
@@ -914,8 +916,7 @@ fi
 log "$funcname: Running cfagent -K on primgmt before starting"
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 
-log "is_image_ready says ooo$(is_image_ready $desired)ooo"
-if [ $(is_image_ready $desired) = "no" ]; then
+if ! is_image_ready $desired; then
 	create_image $desired
 else
 	log "Image Ready"
