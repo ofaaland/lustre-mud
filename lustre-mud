@@ -350,7 +350,7 @@ function wait_for_hostlist_up {
 	done
 
 	if [ "$are_at_multiuser" != "yes" ]; then
- 		local active_nodes=$($PDSH -N -w e${hostlist} systemctl status is-active multi-user.target | grep -w active | dshbak -c)
+ 		local active_nodes=$($PDSH -N -w e${hostlist} systemctl is-active multi-user.target | grep -w active | dshbak -c)
 		log "$funcname: whatsup reports up: $(whatsup -u $hostlist)"
 		log "$funcname: multi-user.target active nodes $active_nodes"
 		error "$funcname: $hostlist not all at multi-user.target after $timeout seconds"
