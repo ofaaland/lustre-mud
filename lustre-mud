@@ -61,19 +61,20 @@ END_OF_DESCRIPTION
 opt_logfile="${LOGBASE}/lustre-mud.$(date +%s).log"
 
 function setup_log {
-	mkdir -f "$LOGBASE"
-	echo "$(date --rfc-3339=seconds) $0: Start" > "$opt_logfile" || {
+	mkdir -p "$LOGBASE"
+	echo "$(date --rfc-3339=seconds) $0: Start" > $opt_logfile || {
 		echo "ERROR: Unable to create log file: $!"
 		exit 1
 	}
 }
+setup_log
 
 function error {
-	echo "$(date --rfc-3339=seconds) $0: ERROR $*" >&2 | tee -a "$opt_logfile"
+	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2 
 }
 
 function log {
-	echo "$(date --rfc-3339=seconds) $0: $*" | tee -a "$opt_logfile"
+	echo "$(date --rfc-3339=seconds) $0: $*" | tee -a $opt_logfile
 }
 
 # Argument handling
@@ -245,7 +246,9 @@ function update_mgmt_node {
 
 	if [ -f $tut ]; then
 		# stop pacemaker first as it may be updated
+		log "$funcname: stopping pacemaker during node $node update"
 		$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+		log "$funcname: Running tut update script on node $node"
 		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
 		local rc=$?
 		if [ $rc -ne 0 ]; then
@@ -259,9 +262,12 @@ function update_mgmt_node {
 			exit 4
 		fi
 
+		log "$funcname: Running cfagent -K on node $node"
 		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
+		log "$funcname: Starting pacemaker on node $node"
 		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
 
+		log "$funcname: Waiting for pacemaker to report all Lustre servers online"
 		wait_for_pacemaker_all_online 360
 
 		log "$funcname: node $node updating IB firmware"
@@ -283,6 +289,7 @@ function reboot_node {
 
 	log "$funcname: REBOOTING node $node"
 	if nodeattr $node pacemaker ; then
+		log "$funcname: stopping pacemaker on node $node for reboot"
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
 		local rc=$?
 		if [ $rc -ne 0 ]; then
@@ -292,6 +299,7 @@ function reboot_node {
 	fi
 
 	if nodeattr $node mgmt ; then
+		log "$funcname: umounting file systems on node $node for reboot"
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN sync
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
 	fi
@@ -319,13 +327,16 @@ function wait_for_hostlist_up {
 	local start=$(date +%s)
 	local end=$((start + timeout))
 
+	local are_at_multiuser=""
 	local are_up=""
+	log "$funcname: waiting for hosts $hostlist to come up"
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
 		if ! whatsup -u $hostlist | fgrep -q -w $hostlist ; then
 			continue
 		fi
 
+		are_up=$hostlist
 		local current_status=$($PDSH -N -w e${hostlist} systemctl status multi-user.target | awk '/Active:/ {print $2}' | uniq)
 		if [ -z "$current_status" ]; then
 			# node down
@@ -333,13 +344,16 @@ function wait_for_hostlist_up {
 		fi
 
 		if [ "active" = "$current_status" ]; then
-			are_up="yes"
+			are_at_multiuser="yes"
 			break
 		fi
 	done
 
-	if [ "$are_up" != "yes" ]; then
-		error "$hostlist not up after $timeout seconds"
+	if [ "$are_at_multiuser" != "yes" ]; then
+ 		local active_nodes=$($PDSH -N -w e${hostlist} systemctl status is-active multi-user.target | grep -w active | dshbak -c)
+		log "$funcname: whatsup reports up: $(whatsup -u $hostlist)"
+		log "$funcname: multi-user.target active nodes $active_nodes"
+		error "$funcname: $hostlist not all at multi-user.target after $timeout seconds"
 		exit 7
 	fi
 }
@@ -430,6 +444,8 @@ function is_image_ready {
 	local image_path=/tftpboot/images/${image_name}.$(arch)
 	local image_ready="no"
 
+	log "$funcname: checking image $image_name for readiness: use_iscsi $use_iscsi"
+
 	if [ -n "$use_iscsi" ]; then
 		image_path=/tftpboot/images/${image_name}.$(arch).latest
 		if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
@@ -437,6 +453,8 @@ function is_image_ready {
 			exit 2
 		fi
 	fi
+
+	log "$funcname: checking image $image_name at $image_path"
 
 	if [ -h $image_path ]; then
 		local mount_path=$image_path
@@ -446,18 +464,22 @@ function is_image_ready {
 		if [ -n "$use_iscsi" ]; then
 			mount_path=/mnt/${image_name}
 			mkdir -p $mount_path
+			log "$funcname: mounting iscsi image $image_name at $mount_path"
 			if mount -o loop,ro $image_path $mount_path; then
 				mounted=yes
 			fi
 		fi
 
 		if [ -d ${mount_path}/etc ]; then
+			local has_big_diff="yes"
+			local is_activated="yes"
 			# Check TOSS version and distro_diff
 			local image_version=$(chroot $mount_path distro_version | sed 's/toss //')
 			if [ $image_version = $desired_toss ]; then
 				local image_diff=$(chroot $mount_path distro_diff | wc -l)
 				if [ $image_diff -lt 30 ]; then
 					image_ready="yes"
+					has_big_diff="no"
 				fi
 			fi
 
@@ -465,12 +487,17 @@ function is_image_ready {
 			if [ -n "$use_iscsi" ]; then
 				if [ ! -f /tftpboot/images/.$real_image_name ]; then
 					image_ready="no"
+					is_activated="no"
 				fi
 			else
 				if [ ! -f ${image_path}/etc/passwd ]; then
 					image_ready="no"
+					is_activated="no"
 				fi
 			fi
+			log "$funcname: image $image_name big_diff $has_big_diff activated $is_activated version $image_version"
+		else
+			log "$funcname: image $image_name at $image_path is damaged or incomplete"
 		fi
 
 		if [ "$mounted" = "yes" ]; then
@@ -478,6 +505,7 @@ function is_image_ready {
 		fi
 	fi
 
+	log "$funcname: image $image_name ready $image_ready"
 	echo $image_ready
 }
 
@@ -495,7 +523,6 @@ function create_image {
 		exit 2
 	fi
 
-	echo $0: create_image: creating image version $desired_toss
 	local image_name=$(get_image_name)
 
 	local lustre_group="lustre_2.10"
@@ -507,8 +534,10 @@ function create_image {
 		nbd_size_opt="-b ${NBD_SIZE}"
 	fi
 
+	log "$funcname: creating image name $image_name lustre version $lustre_group iscsi $use_iscsi"
 	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} base netroot $(arch) ${lustre_group}
 
+	log "$funcname: activating image name $image_name iscsi $use_iscsi"
 	local nbd_size_opt=""
 	if [ -n "$use_iscsi" ]; then
 		$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
@@ -524,7 +553,7 @@ function create_image {
 
 function update_firmware {
 	local funcname="update_firmware"
-	echo $0: update_firmware: updating firmware with ib_burn_fw
+	log "$funcname: updating firmware with ib_burn_fw"
 	$DRYRUN $PDSH        -f 128 -av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
 	$DRYRUN $PDSH_MEDIUM -f 128 -av /sbin/ib_burn_fw
 	$DRYRUN $PDSH        -f 128 -av -X cfhost umount /usr/share/ib_firmware
@@ -550,6 +579,7 @@ function wait_for_zpools_imported {
 	local start=$(date +%s)
 	local end=$((start + timeout))
 
+	log "$funcname: waiting for nodes $hostlist to have their pools imported"
 	local pools_imported=""
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
@@ -564,6 +594,7 @@ function wait_for_zpools_imported {
 		error "pools not imported from $hostlist after $timeout seconds"
 		exit 2
 	fi
+	log "$funcname: confirmed nodes $hostlist have their pools imported"
 }
 
 # Wait until the specified host(s) have no pools imported
@@ -586,6 +617,7 @@ function wait_for_zpools_exported {
 	local start=$(date +%s)
 	local end=$((start + timeout))
 
+	log "$funcname: waiting for nodes $hostlist to have their pools exported"
 	local pools_exported=""
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
@@ -603,6 +635,8 @@ function wait_for_zpools_exported {
 	if [ "$pools_exported" != "yes" ]; then
 		error "pools not exported from $hostlist after $timeout seconds"
 		# no exit here, because node will be fenced and process will continue
+	else
+		log "$funcname: confirmed nodes $hostlist have their pools exported"
 	fi
 }
 
@@ -641,10 +675,11 @@ function wait_for_pacemaker_all_online {
 
 	if [ "$pacemaker_online" != "yes" ]; then
 		local resources=$(pcs status | grep 'ocf::' | grep -v -w Started | awk '{print $1}' | xargs)
-		log "Resources not running ('Started'): $resources"
-		error "pacemaker resources not all online after ${timeout} seconds"
+		log "${funcname} Resources not running: $resources"
+		error "${funcname} pacemaker resources not all online after ${timeout} seconds"
 		exit 5
 	fi
+	log "${funcname}: pacemaker reports all resources online"
 }
 
 function pcs_node_status {
@@ -736,7 +771,7 @@ function update_lustre_nodes {
 	local mds=$(hostlist --intersection $(nodeattr -q mds) $nodelist)
 
 	# Proceeed with update
-	log "${funcname}: stopping pacemaker (and lustre)"
+	log "${funcname}: stopping pacemaker and lustre"
 	# This is faster than systemctl stop pacemaker because of ordering
 	# and concurrence
 	$DRYRUN pcs cluster kill
@@ -775,16 +810,16 @@ function update_lustre_nodes {
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
 
 	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
-		error "${funcname}: rebooted nodes ($nodelist) not all $desired_toss, proceed manually"
+		error "${funcname}: rebooted nodes $nodelist are not all $desired_toss.  Fix the issue then re-run lustre-mud"
 		exit 2
 	fi
 
 	if [ $badnode_count != 0 ]; then
-		error "${funcname}: some rebooted nodes in $nodelist have badnode, proceed manually"
+		error "${funcname}: some rebooted nodes in $nodelist have badnode.  Fix the issue then re-run lustre-mud"
 		exit 2
 	fi
 
-	$DRYRUN $PDSH -w e${nodelist} "zpool import \$(hostname)"
+	$DRYRUN $PDSH -w e${nodelist} 'zpool import $(hostname)'
 	wait_for_zpools_imported ${nodelist} 60
 
 	$DRYRUN systemctl start pacemaker
@@ -810,27 +845,32 @@ function bounce_sample_node {
 	local sample_node_status=$(pcs_node_status $sample_node)
 	local partner_node_status=$(pcs_node_status $partner_node)
 
-	log "$funcname: $sample_node ($sample_node_status) partner: $partner_node ($partner_node_status)"
+	log "$funcname: $sample_node $sample_node_status partner: $partner_node $partner_node_status"
 
 	if [ "$partner_node_status" != "Online:" ]; then
-		error "$funcname: sample node parter ($partner_node) not Online, fix and retry"
+		error "$funcname: sample node parter $partner_node not Online, fix and retry"
 		exit 2
 	fi
 
+	log "$funcname: putting node $sample_node into standby"
 	$DRYRUN pcs node standby $sample_node
+	log "$funcname: waiting for node $sample_node to export pools"
 	$DRYRUN wait_for_zpools_exported $sample_node 300
+	log "$funcname: fencing node $sample_node"
 	$DRYRUN pcs stonith fence $sample_node
 	# XXX TODO make below more robust
 	sleep 120
 	# power the node back on in case it was powered off instead of rebooted by stonith
+	log "$funcname: waiting for node $sample_node to come back up"
 	$DRYRUN pm -1 $sample_node
 	wait_for_hostlist_up $sample_node 480
 
 	if [ "$(lustre_node_ready $sample_node $desired_toss)" != "yes" ]; then
-		error "$funcname: sample node ($sample_node) update failed, proceed manually"
+		error "$funcname: sample node $sample_node update failed, proceed manually"
 		exit 2
 	fi
 
+	log "$funcname: taking node $sample_node out of standby"
 	$DRYRUN pcs node unstandby $sample_node
 	wait_for_zpools_imported $sample_node 300
 
@@ -871,8 +911,10 @@ if ! ls $repo_rpm ; then
 fi
 
 # make sure we have current configs in place
+log "$funcname: Running cfagent -K on primgmt before starting"
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 
+log "is_image_ready says ooo$(is_image_ready $desired)ooo"
 if [ $(is_image_ready $desired) = "no" ]; then
 	create_image $desired
 else
@@ -892,14 +934,14 @@ if [ -n "$nodelist" ] ; then
 
 	update_lustre_nodes $desired $nodelist
 else
-	log "lustre servers already running toss $desired_toss"
+	log "lustre servers already running toss $desired"
 fi
 
 # verify that everything was updated
 nodelist=$(lustre_nodes_needing_update $desired)
 exit_code=0
 if [ -n "$nodelist" ] ; then
-	echo "WARNING: Nodes were not updated ($nodelist)."
+	echo "WARNING: Nodes were not updated: $nodelist."
 	echo "Verify below:"
 	exit_code=1
 else
