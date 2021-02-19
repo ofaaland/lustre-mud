@@ -327,34 +327,49 @@ function wait_for_hostlist_up {
 	local start=$(date +%s)
 	local end=$((start + timeout))
 
+	log "$funcname: waiting for hosts $hostlist to come up"
+
 	local are_at_multiuser=""
 	local are_up=""
-	log "$funcname: waiting for hosts $hostlist to come up"
+	local active_nodes=""
 	while [ $(date +%s) -lt $end ]; do
-		sleep 1
-		if ! whatsup -u $hostlist | fgrep -q -w $hostlist ; then
-			continue
-		fi
-
-		are_up=$hostlist
-		local current_status=$($PDSH -N -w e${hostlist} systemctl status multi-user.target | awk '/Active:/ {print $2}' | uniq)
-		if [ -z "$current_status" ]; then
-			# node down
-			continue
-		fi
-
-		if [ "active" = "$current_status" ]; then
-			are_at_multiuser="yes"
+		are_up=$(whatsup -u $hostlist)
+		if [ "$are_up" = "$hostlist" ] ; then
+	        log "$funcname: whatsup reports all hosts up"
 			break
 		fi
+		sleep 1
 	done
 
+	if [ $(date +%s) -lt $end ]; then
+		log "$funcname: Checking status multiuser-target."
+
+		while [ $(date +%s) -lt $end ]; do
+			active_nodes=$($PDSH -w e${hostlist} systemctl is-active multi-user.target | grep -w active | dshbak -c | grep $(nodeattr -V -U cluster) )
+			if [ "$active_nodes" = "" ]; then
+				# all nodes down
+				sleep 1
+				continue
+			fi
+
+			    # pdsh uses the e-names
+			if [ "e$hostlist" = "$active_nodes" ]; then
+				are_at_multiuser="yes"
+				break
+			fi
+
+			sleep 1
+		done
+	fi
+
+
 	if [ "$are_at_multiuser" != "yes" ]; then
- 		local active_nodes=$($PDSH -N -w e${hostlist} systemctl is-active multi-user.target | grep -w active | dshbak -c)
 		log "$funcname: whatsup reports up: $(whatsup -u $hostlist)"
 		log "$funcname: multi-user.target active nodes $active_nodes"
 		error "$funcname: $hostlist not all at multi-user.target after $timeout seconds"
 		exit 7
+	else
+		log "$funcname: nodes $active_nodes report multi-user.target active"
 	fi
 }
 
