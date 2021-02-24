@@ -950,6 +950,8 @@ wait_for_pacemaker_all_online 30
 
 nodelist=$(lustre_nodes_needing_update $desired)
 if [ -n "$nodelist" ] ; then
+    log "main: lustre servers $nodelist need to be updated"
+
 	update_firmware
 
 	bounce_sample_node $desired
