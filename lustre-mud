@@ -449,6 +449,7 @@ function get_image_name {
 
 function is_image_ready {
 	local desired_toss=$1
+	local funcmame="is_image_ready"
 
 	if [ -z "$desired_toss" ]; then
 		error "$funcname: missing argument desired_toss"
