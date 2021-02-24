@@ -668,6 +668,11 @@ function wait_for_pacemaker_all_online {
 		exit 2
 	fi
 
+    if ! systemctl is-active pacemaker; then
+		error "$funcname: pacemaker is not running unexpectedly.  Please investigate and try again."
+		exit 2
+    fi
+
 	log "${funcname}: waiting for pacemaker to report all resources online"
 
 	local start=$(date +%s)
