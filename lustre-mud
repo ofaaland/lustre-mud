@@ -928,13 +928,13 @@ cd /root
 
 # verify links to the repo exist
 repo_rpm="/repo/toss/$(distro_version --major)/current/$(arch)/toss-release-${desired}*.rpm"
-if ! ls $repo_rpm ; then
-	error "$funcname: unable to create image, $repo_rpm does not exist"
+if ! ls $repo_rpm > /dev/null 2>&1 ; then
+	error "main: unable to create image, $repo_rpm does not exist"
 	exit 2
 fi
 
 # make sure we have current configs in place
-log "$funcname: Running cfagent -K on primgmt before starting"
+log "main: Running cfagent -K on primgmt before starting"
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 
 if ! is_image_ready $desired; then
