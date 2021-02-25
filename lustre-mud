@@ -335,7 +335,7 @@ function wait_for_hostlist_up {
 	while [ $(date +%s) -lt $end ]; do
 		are_up=$(whatsup -u $hostlist)
 		if [ "$are_up" = "$hostlist" ] ; then
-	        log "$funcname: whatsup reports all hosts up"
+			log "$funcname: whatsup reports all hosts up"
 			break
 		fi
 		sleep 1
