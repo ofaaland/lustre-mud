@@ -345,10 +345,7 @@ function wait_for_hostlist_up {
 		log "$funcname: Checking status multiuser-target."
 
 		while [ $(date +%s) -lt $end ]; do
-			# pdsh to the node while it's still booting may fail, so tolerate errors
-			set +e
 			active_nodes=$($PDSH -w e${hostlist} systemctl is-active multi-user.target | grep -w active | dshbak -c | grep $(nodeattr -V -U cluster) )
-			set -e
 			if [ "$active_nodes" = "" ]; then
 				# all nodes down
 				sleep 1
