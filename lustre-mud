@@ -243,10 +243,12 @@ function update_mgmt_node {
 	log "$funcname: UPDATING node $node to $version"
 	local tut=${TUTBIN}/${version}
 
-	if [ -f $tut ]; then
-		# stop pacemaker first as it may be updated
-		log "$funcname: stopping pacemaker during node $node update"
-		$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+	if [ "$(${PDSH} -w ${node} test -x $tut && echo OK)" = "OK" ]; then
+		if nodeattr $node pacemaker; then
+			# stop pacemaker first as it may be updated
+			log "$funcname: stopping pacemaker during node $node update"
+			$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+		fi
 		log "$funcname: Running tut update script on node $node"
 		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
 		local rc=$?
@@ -256,23 +258,24 @@ function update_mgmt_node {
 		fi
 
 		if [ $(want_toss_update ${node} ${version}) = "yes" ] ; then
-			error "$tut on $node did not change toss to ${version}."
-			error "REMINDER: cfagent && start pacemaker required"
+			error "$tut on $node did not change toss to ${version}.  Update, run cfagentk, and start pacemaker if necessary."
 			exit 4
 		fi
 
 		log "$funcname: Running cfagent -K on node $node"
 		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
-		log "$funcname: Starting pacemaker on node $node"
-		$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
+		if nodeattr $node pacemaker; then
+			log "$funcname: Starting pacemaker on node $node"
+			$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
 
-		log "$funcname: Waiting for pacemaker to report all Lustre servers online"
-		wait_for_pacemaker_all_online 360
+			log "$funcname: Waiting for pacemaker to report all Lustre servers online"
+			wait_for_pacemaker_all_online 360
+		fi
 
 		log "$funcname: node $node updating IB firmware"
 		$DRYRUN ${PDSH_LONG} -w $node /sbin/ib_burn_fw
 	else
-		error "$tut update script is not executable."
+		error "$tut update script is not executable on node $node."
 		exit 4
 	fi
 }
