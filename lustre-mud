@@ -293,11 +293,6 @@ function reboot_node {
 	if nodeattr $node pacemaker ; then
 		log "$funcname: stopping pacemaker on node $node for reboot"
 		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
-		local rc=$?
-		if [ $rc -ne 0 ]; then
-			error "pcs cluster kill failed on node $node."
-			exit 6
-		fi
 	fi
 
 	if nodeattr $node mgmt ; then
