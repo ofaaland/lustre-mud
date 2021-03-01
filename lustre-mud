@@ -942,9 +942,6 @@ fi
 
 update_mgmt_nodes $desired $desired_kernel
 
-# stop if pacemaker is not running and everything up
-wait_for_pacemaker_all_online 30
-
 nodelist=$(lustre_nodes_needing_update $desired)
 if [ -n "$nodelist" ] ; then
     log "main: lustre servers $nodelist need to be updated"
