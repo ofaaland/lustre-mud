@@ -952,17 +952,22 @@ function bounce_sample_node {
 }
 
 summarize_status() {
+	local funcname="summarize_status"
+	local desired_toss=$1
+
+	if [ -z "$desired_toss" ]; then
+		error "$funcname: missing argument desired_toss"
+		exit 2
+	fi
+
 	echo ================================================
 	echo Up/Down Nodes:
-	whatsup
-	echo Distro Version:
-	pdsh -Av distro_version | dshbak -c
-	echo Running Kernel:
-	pdsh -Av uname -r | dshbak -c
-	echo "Distro Diff"
-	pdsh -Av distro_diff | dshbak -c
-	echo "Lustre Cluster Check"
-	lustre_cluster_check -v
+	log Nodes up: $(whatsup -u)
+	log Lustre targets up: $(pcs status | grep -c 'ocf::llnl:lustre.*Started')
+	log TOSS versions: $($PDSH -Av distro_version | grep -w $desired_toss | dshbak -c | sed 's/---*//' | xargs)
+	log Running kernel: $($PDSH -Av uname -r | dshbak -c |  sed 's/---*//' | xargs)
+	log Lines in distro_diff: $($PDSH -Av 'distro_diff | wc -l' | dshbak -c |  sed 's/---*//' | xargs)
+	lustre_cluster_check
 	echo ================================================
 }
 
@@ -1021,7 +1026,7 @@ else
 	echo "All nodes appear to be updated.  Verify below:"
 fi
 
-summarize_status | less
+summarize_status $desired | less
 
 log "end timestamp $(date +%s) duration $(( ($(date +%s) - start_timestamp)/60 )) minutes"
 
