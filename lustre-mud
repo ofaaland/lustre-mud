@@ -716,7 +716,7 @@ function wait_for_pacemaker_all_online {
 	fi
 
 	if ! systemctl is-active pacemaker; then
-		error "$funcname: pacemaker is not running. Please investigate and re-run lustre-mud"
+		error "$funcname: pacemaker is not running. Please investigate and re-run lustre-mud.  $message"
 		exit 2
 	fi
 
