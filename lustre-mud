@@ -716,7 +716,7 @@ function wait_for_pacemaker_all_online {
 	fi
 
 	if ! systemctl is-active pacemaker; then
-		error "$funcname: pacemaker is not running. Please investigate and re-run lustre-mud.  $message"
+		error "$funcname: pacemaker is not running. Please fix, start pacemaker, and re-run lustre-mud.  $message"
 		exit 2
 	fi
 
@@ -1012,7 +1012,7 @@ else
 	log "lustre servers already running toss $desired"
 fi
 
-wait_for_pacemaker_all_online 360 "Update completed but Pacemaker says not all Lustres resources are online.  Fix the issue and verify the update was successful."
+wait_for_pacemaker_all_online 360 "Update completed but Pacemaker not running or not all resources online.  Fix the issue(s) and verify the update was successful."
 
 # verify that everything was updated
 nodelist=$(lustre_nodes_needing_update $desired)
