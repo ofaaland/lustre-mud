@@ -245,9 +245,13 @@ function update_mgmt_node {
 
 	if [ "$(${PDSH} -w ${node} test -x $tut && echo OK)" = "OK" ]; then
 		if nodeattr $node pacemaker; then
-			# stop pacemaker first as it may be updated
-			log "$funcname: stopping pacemaker during node $node update"
-			$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+			if [ "$($PDSH -w $node systemctl is-active pacemaker)" != "active" ]; then
+				log "$funcname: Pacemaker not running on $node for unknown reason. Continuing with update."
+			else
+				# stop pacemaker first as it may be updated
+				log "$funcname: stopping pacemaker during node $node update"
+				$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+			fi
 		fi
 		log "$funcname: Running tut update script on node $node"
 		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
@@ -268,8 +272,8 @@ function update_mgmt_node {
 			log "$funcname: Starting pacemaker on node $node"
 			$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
 
-			log "$funcname: Waiting for pacemaker to report all Lustre servers online"
-			wait_for_pacemaker_all_online 360
+			log "$funcname: Waiting for pacemaker to report all Lustre online"
+			wait_for_pacemaker_all_online 360 "tut update completed but pacemaker does not say all lustre resources online.  Fix issue, start pacemaker, and re-run lustre-mud"
 		fi
 
 		log "$funcname: node $node updating IB firmware"
@@ -574,6 +578,44 @@ function update_firmware {
 	$DRYRUN $PDSH        -f 128 -av -X cfhost umount /usr/share/ib_firmware
 }
 
+# Wait until the specified host(s) have a lustre target mounted
+# timeout is in seconds
+function wait_for_lustre_started {
+	local funcname="wait_for_lustre_started"
+	local hostlist=$1
+	local timeout=$2
+
+	if [ -z "$hostlist" ]; then
+		error "$funcname: missing argument hostlist"
+		exit 2
+	fi
+
+	if [ -z "$timeout" ]; then
+		error "$funcname: missing argument timeout"
+		exit 2
+	fi
+
+	local start=$(date +%s)
+	local end=$((start + timeout))
+
+	log "$funcname: waiting for nodes $hostlist to have their lustre target mounted"
+	local targets_mounted=""
+	while [ $(date +%s) -lt $end ]; do
+		sleep 1
+		local lustre_with_targets=$($PDSH -w e${hostlist} 'df -h -t lustre | xargs --no-run-if-empty' | wc -l)
+		if [ $lustre_with_targets -eq $(hostlist -c $hostlist) ]; then
+			targets_mounted="yes"
+			break
+		fi
+	done
+
+	if [ "$targets_mounted" != "yes" ]; then
+		error "lustre targets not mounted on $hostlist after $timeout seconds"
+		exit 2
+	fi
+	log "$funcname: confirmed nodes $hostlist have their lustre targets mounted"
+}
+
 # Wait until the specified host(s) have pools imported
 # timeout is in seconds
 function wait_for_zpools_imported {
@@ -660,46 +702,51 @@ function wait_for_zpools_exported {
 function wait_for_pacemaker_all_online {
 	local funcname="wait_for_pacemaker_all_online"
 	local timeout=$1
+	shift
+	local message="$@"
 
 	if [ -z "$timeout" ]; then
 		error "$funcname: missing argument timeout"
 		exit 2
 	fi
 
-    if ! systemctl is-active pacemaker; then
-		error "$funcname: pacemaker is not running unexpectedly.  Please investigate and try again."
+	if [ -z "$message" ]; then
+		error "$funcname: missing argument message"
 		exit 2
-    fi
+	fi
 
-	log "${funcname}: waiting for pacemaker to report all resources online"
+	if ! systemctl is-active pacemaker; then
+		error "$funcname: pacemaker is not running. Please investigate and re-run lustre-mud"
+		exit 2
+	fi
+
+	log "${funcname}: waiting for pacemaker to report all Lustre resources online"
 
 	local start=$(date +%s)
 	local end=$((start + timeout))
 
-	local problem_nodes=""
-	local pacemaker_online="no"
+	local resources_online="no"
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
-		local problem_nodes=$(pcs node status | awk '
-			(/Offline:/ || /Standby:/ || /Maintenance:/) && NF > 1 {print}
-			')
-		if [ -n "${problem_nodes}" ]; then
-			continue;
-		fi
-
-		if [ $(pcs status | grep 'ocf::' | grep -v -w Started | wc -l) -eq 0 ]; then
-			pacemaker_online="yes"
+		if [ $(pcs status | grep 'ocf::llnl:lustre' | grep -v -w Started | wc -l) -eq 0 ]; then
+			resources_online="yes"
 			break;
 		fi
 	done
 
-	if [ "$pacemaker_online" != "yes" ]; then
-		local resources=$(pcs status | grep 'ocf::' | grep -v -w Started | awk '{print $1}' | xargs)
+	if [ "$resources_online" != "yes" ]; then
+		local resources=$(pcs status | grep 'ocf::llnl:lustre' | grep -v -w Started | awk '{print $1}' | xargs)
 		log "${funcname} Resources not running: $resources"
-		error "${funcname} pacemaker resources not all online after ${timeout} seconds"
+		error "${funcname} pacemaker resources not all online after ${timeout} seconds.  $message"
 		exit 5
 	fi
-	log "${funcname}: pacemaker reports all resources online"
+	log "${funcname}: pacemaker reports all lustre resources online"
+
+	# Warn if some nodes offline
+	local problem_nodes=$(pcs status nodes | grep -vw -e Online | sed 's/^.*://' | sort -u | xargs)
+	if [ -n "${problem_nodes}" ]; then
+		log "${funcname} WARNING: Nodes not online (see pcs status): ${problem_nodes}"
+	fi
 }
 
 function pcs_node_status {
@@ -718,7 +765,7 @@ function lustre_node_ready {
 	local funcname="lustre_node_ready"
 	local node=$1
 	local desired_toss=$2
-	local ready="yes"
+	local ready=0
 
 	if [ -z "$node" ]; then
 		error "$funcname: missing argument node"
@@ -735,14 +782,14 @@ function lustre_node_ready {
 	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
 
 	if [ "$new_toss_version" != $desired_toss ]; then
-		ready="no"
+		ready=3
 	fi
 
 	if [ -z "$zpool_imported" -a "$zpool_present" != $node ]; then
-		ready="no"
+		ready=3
 	fi
 
-	echo $ready
+	return $ready
 }
 
 function lustre_nodes_needing_update {
@@ -843,7 +890,11 @@ function update_lustre_nodes {
 	wait_for_zpools_imported ${nodelist} 60
 
 	$DRYRUN systemctl start pacemaker
-	wait_for_pacemaker_all_online 360
+	sleep 4
+	if ! systemctl is-active pacemaker; then
+		error "$funcname: pacemaker failed to start after lustre node reboots. Fix the issue, start pacemaker, and verify the TOSS update of the cluster via distro_version, distro_diff, etc."
+		exit 4
+	fi
 }
 
 function bounce_sample_node {
@@ -852,6 +903,11 @@ function bounce_sample_node {
 
 	if [ -z "$desired_toss" ]; then
 		error "$funcname: missing argument desired_toss"
+		exit 2
+	fi
+
+	if ! systemctl is-active pacemaker; then
+		error "$funcname: pacemaker is not running. Please fix issue, start pacemaker, and re-run lustre-mud"
 		exit 2
 	fi
 
@@ -885,7 +941,7 @@ function bounce_sample_node {
 	$DRYRUN pm -1 $sample_node
 	wait_for_hostlist_up $sample_node 480
 
-	if [ "$(lustre_node_ready $sample_node $desired_toss)" != "yes" ]; then
+	if ! lustre_node_ready $sample_node $desired_toss; then
 		error "$funcname: sample node $sample_node update failed, proceed manually"
 		exit 2
 	fi
@@ -893,9 +949,10 @@ function bounce_sample_node {
 	log "$funcname: taking node $sample_node out of standby"
 	$DRYRUN pcs node unstandby $sample_node
 	wait_for_zpools_imported $sample_node 300
+	log "$funcname: zpool imported on $sample_node successfully"
 
-	# Ensure lustre is started as well as pool imported
-	wait_for_pacemaker_all_online 120
+	wait_for_lustre_started $sample_node 120
+	log "$funcname: Lustre target started on $sample_node successfully"
 }
 
 summarize_status() {
@@ -955,6 +1012,8 @@ else
 	log "lustre servers already running toss $desired"
 fi
 
+wait_for_pacemaker_all_online 360 "Update completed but Pacemaker says not all Lustres resources are online.  Fix the issue and verify the update was successful."
+
 # verify that everything was updated
 nodelist=$(lustre_nodes_needing_update $desired)
 exit_code=0
@@ -964,7 +1023,6 @@ if [ -n "$nodelist" ] ; then
 	exit_code=1
 else
 	echo "All nodes appear to be updated.  Verify below:"
-	exit_code=0
 fi
 
 summarize_status | less
