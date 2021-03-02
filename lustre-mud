@@ -119,7 +119,7 @@ if [ $(id -u) -ne 0 ]; then
 	exit 1
 fi
 
-#set -x
+set -x
 
 desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
 desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
@@ -170,17 +170,16 @@ function update_required {
 	# rpmdev-vercmp says they are newer than the
 	# final release.
 	if [[ "$actual" =~ rc[0-9]$ ]]; then
-		echo "yes"
-		return
+		return 0
 	fi
 
 	rpmdev-vercmp "${actual}" "${desired}" >/dev/null
 	local rc=$?
 	if [ $rc -eq 12 ]; then
 		# desired is newer
-		echo "yes"
+		return 0
 	else
-		echo "no"
+		return 1
 	fi
 }
 
@@ -261,7 +260,7 @@ function update_mgmt_node {
 			exit 4
 		fi
 
-		if [ $(want_toss_update ${node} ${version}) = "yes" ] ; then
+		if want_toss_update ${node} ${version} ; then
 			error "$tut on $node did not change toss to ${version}.  Update, run cfagentk, and start pacemaker if necessary."
 			exit 4
 		fi
@@ -402,17 +401,15 @@ function update_mgmt_nodes {
 
 		node=$(nodeattr -q $gender)
 		if [ -n "$node" ]; then
-			toss_update_required=$(want_toss_update ${node} ${desired_toss})
-			if [ $toss_update_required = "yes" ]; then
-				echo $0: $node: $gender toss_update $toss_update_required from $(actual_toss_version ${node}) to $desired_toss
+			if want_toss_update ${node} ${desired_toss}; then
+				echo $0: $node: $gender toss_update_required from $(actual_toss_version ${node}) to $desired_toss
 				update_mgmt_node $node ${desired_toss}
 			else
 				log "$funcname: $node: $gender no update reqd, already running toss $desired_toss"
 			fi
 
-			reboot_required=$(want_reboot ${node} ${desired_kernel})
-			if [ -n "$force_mgmt_reboot" -o $reboot_required = "yes" ]; then
-				echo $node: $gender reboot $reboot_required from $(running_kernel ${node}) to $desired_kernel
+			if [ -n "$force_mgmt_reboot" ] || want_reboot ${node} ${desired_kernel}; then
+				echo $node: $gender reboot from $(running_kernel ${node}) to $desired_kernel
 				reboot_node $node
 				wait_for_hostlist_up $node 300
 			else
@@ -806,8 +803,7 @@ function lustre_nodes_needing_update {
 	# Build list of nodes not already updated
 	local need_update=""
 	for node in $(hostlist --expand --delimiters ' ' $nodelist); do
-		toss_update_required=$(want_toss_update ${node} ${desired_toss})
-		if [ $toss_update_required = "yes" ]; then
+		if want_toss_update ${node} ${desired_toss} ; then
 			need_update="$need_update $node"
 		fi
 	done
