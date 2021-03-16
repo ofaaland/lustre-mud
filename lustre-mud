@@ -560,10 +560,10 @@ function create_image {
 	fi
 
 	if [ -z "$DRYRUN" ]; then
-        if ! is_image_ready $desired; then
-            error "$funcname: failed to validate new image"
-            exit 2
-        fi
+		if ! is_image_ready $desired; then
+			error "$funcname: failed to validate new image"
+			exit 2
+		fi
 	fi
 }
 
