@@ -186,4 +186,4 @@ summarize_status $desired | less
 
 log "end timestamp $(date +%s) duration $(( ($(date +%s) - start_timestamp)/60 )) minutes"
 
-exit $exit_code
+exit 0
