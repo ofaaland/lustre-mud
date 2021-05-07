@@ -12,8 +12,8 @@ PDSH="pdsh -t2 -u60"
 PDSH_MEDIUM="pdsh -t2 -u300"
 PDSH_LONG="pdsh -t2"
 #NBD_SIZE="30G"
-DRYRUN="echo"
-#DRYRUN=""
+#DRYRUN="echo"
+DRYRUN=""
 
 ###
 ###function usage {
@@ -942,7 +942,7 @@ log "start timestamp $start_timestamp"
 cd /root
 
 nodelist=$(nodeattr -q oss)
-#reboot_nodes $desired $nodelist
+reboot_nodes $desired $nodelist
 
 wait_for_hostlist_up $nodelist 600
 
