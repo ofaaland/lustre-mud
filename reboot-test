@@ -184,10 +184,11 @@ log "start timestamp $start_timestamp"
 # so our cwd doesn't disappear when we umount and restart
 cd /root
 
+# reboot_nodes both power cycles the nodes and waits for them to
+# get to multi-user.target
+
 nodelist=$(nodeattr -q oss)
 reboot_nodes $desired $nodelist
-
-wait_for_hostlist_up $nodelist 600
 
 summarize_status $desired | less
 
