@@ -40,7 +40,7 @@ if [ $(id -u) -ne 0 ]; then
 	exit 1
 fi
 
-set -x
+#set -x
 
 
 # Wait until the specified host(s) are 'up' per whatsup and multi-user.target was reached
