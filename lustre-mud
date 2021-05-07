@@ -1,9 +1,9 @@
 #!/usr/bin/bash
 ###########################################################################
-# $URL: the_url_here  $
-# $Author: the_author $
-# $Date: the_date_and_time $
-# $Rev: the_svn_rev $
+# $URL$
+# $Author$
+# $Date$
+# $Rev$
 ###########################################################################
 
 TUTBIN=/admin/tut/bin/updates
