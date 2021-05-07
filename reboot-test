@@ -6,12 +6,8 @@
 # $Rev$
 ###########################################################################
 
-#TUTBIN=/admin/tut/bin/updates
 LOGBASE="/root/reboot-test"
 PDSH="pdsh -t2 -u60"
-PDSH_MEDIUM="pdsh -t2 -u300"
-PDSH_LONG="pdsh -t2"
-#NBD_SIZE="30G"
 #DRYRUN="echo"
 DRYRUN=""
 
