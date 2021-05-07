@@ -109,19 +109,19 @@ function log {
 ###	error "only for use on Lustre clusters"
 ###	exit 1
 ###fi
-###
-###if ! nodeattr primgmt ; then
-###	error "must be run from primgmt"
-###	exit 1
-###fi
-###
-###if [ $(id -u) -ne 0 ]; then
-###	error "must be run as root"
-###	exit 1
-###fi
-###
-####set -x
-###
+
+if ! nodeattr primgmt ; then
+	error "must be run from primgmt"
+	exit 1
+fi
+
+if [ $(id -u) -ne 0 ]; then
+	error "must be run as root"
+	exit 1
+fi
+
+set -x
+
 ###desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
 ###desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
 ###use_iscsi=$(nodeattr -q 'mds&&iscsi')
