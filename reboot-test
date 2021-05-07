@@ -65,6 +65,7 @@ function wait_for_hostlist_up {
 
 	log "$funcname: waiting for hosts $hostlist to come up"
 
+	local checked_multiuser=0
 	local are_at_multiuser=""
 	local are_up=""
 	local active_nodes=""
@@ -80,6 +81,7 @@ function wait_for_hostlist_up {
 	if [ $(date +%s) -lt $end ]; then
 		log "$funcname: Checking status multiuser-target."
 
+		checked_multiuser=1
 		while [ $(date +%s) -lt $end ]; do
 			active_nodes=$($PDSH -w e${hostlist} systemctl is-active multi-user.target | grep -w active | dshbak -c | grep $(nodeattr -V -U cluster) )
 			if [ "$active_nodes" = "" ]; then
@@ -98,14 +100,18 @@ function wait_for_hostlist_up {
 		done
 	fi
 
-
-	if [ "$are_at_multiuser" != "yes" ]; then
-		log "$funcname: whatsup reports up: $(whatsup -u $hostlist)"
+	if [ "$are_at_multiuser" = "yes" ]; then
+		log "$funcname: nodes $active_nodes report multi-user.target active"
+	else
+		log "$funcname: whatsup reports up: $are_up"
 		log "$funcname: multi-user.target active nodes $active_nodes"
+		if [[ $checked_multiuser -eq 1 ]]; then
+			log "$funcname: problem nodes $(hostlist --minus $hostlist $active_nodes)"
+		else
+			log "$funcname: problem nodes $(hostlist --minus $hostlist $are_up)"
+		fi
 		error "$funcname: $hostlist not all at multi-user.target after $timeout seconds"
 		exit 7
-	else
-		log "$funcname: nodes $active_nodes report multi-user.target active"
 	fi
 }
 
