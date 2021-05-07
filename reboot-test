@@ -173,7 +173,6 @@ function summarize_status() {
 	local funcname="summarize_status"
 
 	echo ================================================
-	echo Up/Down Nodes:
 	log Nodes up: $(whatsup -u)
 	log TOSS versions: $($PDSH -Av distro_version | dshbak -c | sed 's/---*//' | xargs)
 	log Running kernel: $($PDSH -Av uname -r | dshbak -c |  sed 's/---*//' | xargs)
