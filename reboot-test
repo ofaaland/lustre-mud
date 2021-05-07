@@ -164,7 +164,6 @@ function summarize_status() {
 	log Nodes up: $(whatsup -u)
 	log TOSS versions: $($PDSH -Av distro_version | dshbak -c | sed 's/---*//' | xargs)
 	log Running kernel: $($PDSH -Av uname -r | dshbak -c |  sed 's/---*//' | xargs)
-	log Lines in distro_diff: $($PDSH -Av 'distro_diff | wc -l' | dshbak -c |  sed 's/---*//' | xargs)
 	echo ================================================
 }
 
