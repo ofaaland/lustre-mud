@@ -143,9 +143,16 @@ function reboot_nodes {
 		fi
 	fi
 
+
 	log "${funcname}: waiting for nodes to boot"
+	# it takes some time for whatsup to recognize nodes are down,
+	# want to sleep while it falsely says they are up
 	sleep 180
-	wait_for_hostlist_up $nodelist 600
+
+	# gopher OSS nodes take about 9 minutes from power-on to fully up
+	# so sleep after power-on + wait_for_hostlist_up should be at least
+	# 15 minutes == 900 seconds to account for variability
+	wait_for_hostlist_up $nodelist $((900 - 180))
 
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
 
