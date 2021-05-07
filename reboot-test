@@ -22,6 +22,14 @@ function setup_log {
 }
 setup_log
 
+## exit values
+# 0  success
+# 1  bad invocation environment (not run as root, unable to create log file, etc)
+# 2  bad arguments to internal function
+# 3  unable to power on/off nodes
+# 4  rebooted nodes have badnode file
+# 7  not all hosts at multi-user.target after timeout
+
 function error {
 	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2 
 }
@@ -133,7 +141,7 @@ function reboot_nodes {
 		sleep 2
 		if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
 			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
-			$DRYRUN exit 2
+			$DRYRUN exit 3
 		fi
 	fi
 
@@ -145,7 +153,7 @@ function reboot_nodes {
 		sleep 2
 		if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
 			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
-			exit 2
+			exit 3
 		fi
 	fi
 
@@ -164,7 +172,7 @@ function reboot_nodes {
 
 	if [ $badnode_count != 0 ]; then
 		error "${funcname}: some rebooted nodes in $nodelist have badnode: $($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null)"
-		exit 2
+		exit 4
 	fi
 }
 
