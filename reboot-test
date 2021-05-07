@@ -195,7 +195,7 @@ cd /root
 nodelist=$(nodeattr -q oss)
 reboot_nodes $desired $nodelist
 
-summarize_status $desired | less
+summarize_status $desired
 
 log "end timestamp $(date +%s) duration $(( ($(date +%s) - start_timestamp)/60 )) minutes"
 
