@@ -815,85 +815,52 @@ function wait_for_hostlist_up {
 ###		hostlist $need_update
 ###	fi
 ###}
-###
-###function update_lustre_nodes {
-###	local funcname="update_lustre_nodes"
-###	local desired_toss=$1
-###	local nodelist=$2
-###
-###	if [ -z "$desired_toss" ]; then
-###		error "${funcname}: missing argument desired_toss"
-###		exit 2
-###	fi
-###
-###	if [ -z "$nodelist" ]; then
-###		error "${funcname}: missing argument nodelist"
-###		exit 2
-###	fi
-###
-###	local oss=$(hostlist --intersection $(nodeattr -q oss) $nodelist)
-###	local mds=$(hostlist --intersection $(nodeattr -q mds) $nodelist)
-###
-###	# Proceeed with update
-###	log "${funcname}: stopping pacemaker and lustre"
-###	# This is faster than systemctl stop pacemaker because of ordering
-###	# and concurrence
-###	$DRYRUN pcs cluster kill
-###	$DRYRUN timeout --kill-after=6m 5m pdsh -f 128 -w e${oss} shutdown -h now
-###	$DRYRUN timeout --kill-after=6m 5m pdsh -f 128 -w e${mds} shutdown -h now
-###
-###	log "${funcname}: powering off lustre servers $nodelist"
-###	$DRYRUN pm -0 $nodelist
-###	sleep 2
-###	if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
-###		$DRYRUN pm -0 $nodelist
-###		sleep 2
-###		if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
-###			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
-###			$DRYRUN exit 2
-###		fi
-###	fi
-###
-###	log "${funcname}: powering on all lustre servers"
-###	$DRYRUN pm -1 $nodelist
-###	sleep 2
-###	if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
-###		$DRYRUN pm -1 $nodelist
-###		sleep 2
-###		if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
-###			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
-###			exit 2
-###		fi
-###	fi
-###
-###	log "${funcname}: waiting for lustre servers to boot"
-###	sleep 180
-###	wait_for_hostlist_up $nodelist 600
-###
-###	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
-###	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
-###
-###	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
-###		error "${funcname}: rebooted nodes $nodelist are not all $desired_toss.  Fix the issue then re-run lustre-mud"
-###		exit 2
-###	fi
-###
-###	if [ $badnode_count != 0 ]; then
-###		error "${funcname}: some rebooted nodes in $nodelist have badnode.  Fix the issue then re-run lustre-mud"
-###		exit 2
-###	fi
-###
-###	$DRYRUN $PDSH -w e${nodelist} 'zpool import $(hostname)'
-###	wait_for_zpools_imported ${nodelist} 60
-###
-###	$DRYRUN systemctl start pacemaker
-###	sleep 4
-###	if ! systemctl is-active pacemaker; then
-###		error "$funcname: pacemaker failed to start after lustre node reboots. Fix the issue, start pacemaker, and verify the TOSS update of the cluster via distro_version, distro_diff, etc."
-###		exit 4
-###	fi
-###}
-###
+
+function reboot_nodes {
+	local funcname="reboot_nodes"
+	local nodelist=$1
+
+	if [ -z "$nodelist" ]; then
+		error "${funcname}: missing argument nodelist"
+		exit 2
+	fi
+
+	log "${funcname}: powering off nodes $nodelist"
+	$DRYRUN pm -0 $nodelist
+	sleep 2
+	if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
+		$DRYRUN pm -0 $nodelist
+		sleep 2
+		if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
+			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
+			$DRYRUN exit 2
+		fi
+	fi
+
+	log "${funcname}: powering on all nodes"
+	$DRYRUN pm -1 $nodelist
+	sleep 2
+	if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
+		$DRYRUN pm -1 $nodelist
+		sleep 2
+		if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
+			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
+			exit 2
+		fi
+	fi
+
+	log "${funcname}: waiting for nodes to boot"
+	sleep 180
+	wait_for_hostlist_up $nodelist 600
+
+	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
+
+	if [ $badnode_count != 0 ]; then
+		error "${funcname}: some rebooted nodes in $nodelist have badnode: $($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null)"
+		exit 2
+	fi
+}
+
 ###function bounce_sample_node {
 ###	local funcname="bounce_sample_node"
 ###	local desired_toss=$1
@@ -952,19 +919,13 @@ function wait_for_hostlist_up {
 ###	log "$funcname: Lustre target started on $sample_node successfully"
 ###}
 
-summarize_status() {
+function summarize_status() {
 	local funcname="summarize_status"
-	local desired_toss=$1
-
-	if [ -z "$desired_toss" ]; then
-		error "$funcname: missing argument desired_toss"
-		exit 2
-	fi
 
 	echo ================================================
 	echo Up/Down Nodes:
 	log Nodes up: $(whatsup -u)
-	log TOSS versions: $($PDSH -Av distro_version | grep -w $desired_toss | dshbak -c | sed 's/---*//' | xargs)
+	log TOSS versions: $($PDSH -Av distro_version | dshbak -c | sed 's/---*//' | xargs)
 	log Running kernel: $($PDSH -Av uname -r | dshbak -c |  sed 's/---*//' | xargs)
 	log Lines in distro_diff: $($PDSH -Av 'distro_diff | wc -l' | dshbak -c |  sed 's/---*//' | xargs)
 	echo ================================================
@@ -980,50 +941,10 @@ log "start timestamp $start_timestamp"
 # so our cwd doesn't disappear when we umount and restart
 cd /root
 
-# verify links to the repo exist
-repo_rpm="/repo/toss/$(distro_version --major)/current/$(arch)/toss-release-${desired}*.rpm"
-if ! ls $repo_rpm > /dev/null 2>&1 ; then
-	error "main: unable to create image, $repo_rpm does not exist"
-	exit 2
-fi
+nodelist=$(nodeattr -q oss)
+#reboot_nodes $desired $nodelist
 
-# make sure we have current configs in place
-log "main: Running cfagent -K on primgmt before starting"
-$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
-
-if ! is_image_ready $desired; then
-	create_image $desired
-else
-	log "Image Ready"
-fi
-
-update_mgmt_nodes $desired $desired_kernel
-
-nodelist=$(lustre_nodes_needing_update $desired)
-if [ -n "$nodelist" ] ; then
-    log "main: lustre servers $nodelist need to be updated"
-
-	update_firmware
-
-	bounce_sample_node $desired
-
-	update_lustre_nodes $desired $nodelist
-else
-	log "lustre servers already running toss $desired"
-fi
-
-wait_for_pacemaker_all_online 360 "Update completed but Pacemaker not running or not all resources online.  Fix the issue(s) and verify the update was successful."
-
-# verify that everything was updated
-nodelist=$(lustre_nodes_needing_update $desired)
-exit_code=0
-if [ -n "$nodelist" ] ; then
-	echo "WARNING: Nodes were not updated: $nodelist."
-	echo "Verify below:"
-	exit_code=1
-else
-	echo "All nodes appear to be updated.  Verify below:"
-fi
+wait_for_hostlist_up $nodelist 600
 
 summarize_status $desired | less
 
