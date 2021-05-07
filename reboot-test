@@ -1,0 +1,1032 @@
+#!/usr/bin/bash
+###########################################################################
+# $URL$
+# $Author$
+# $Date$
+# $Rev$
+###########################################################################
+
+#TUTBIN=/admin/tut/bin/updates
+LOGBASE="/root/reboot-test"
+PDSH="pdsh -t2 -u60"
+PDSH_MEDIUM="pdsh -t2 -u300"
+PDSH_LONG="pdsh -t2"
+#NBD_SIZE="30G"
+DRYRUN="echo"
+#DRYRUN=""
+
+###
+###function usage {
+###cat <<END_OF_USAGE
+###	usage: $0 [force_mgmt_reboot | describe]
+###
+###	update a lustre server cluster to the latest production toss version.  If
+###	the kernel version has not changed, the mgmt nodes will not be rebooted
+###
+###	    describe          : describe the update process in detail and exit.
+###	    force_mgmt_reboot : reboot mgmt nodes even if no kernel change.
+###END_OF_USAGE
+###}
+###
+###function describe {
+###cat <<END_OF_DESCRIPTION
+###	###### Overall Process #######
+###	 1. create image
+###	 2. for node in altmgmt primgmt; do
+###	   update \$node
+###	   update IB firware on \$node
+###	   reboot \$node
+###	   verify \$node
+###	 3. update IB firmware on lustre nodes
+###	 4. for sample lustre server
+###	   fence node
+###	   boot node
+###	   verify booted node distro
+###	   verify booted node starts lustre target
+###	 5. stop pacemaker and umount lustre on all nodes
+###	 6. reboot and verify remaining nodes
+###	 7. restart pacemaker to restart lustre
+###	##############################
+###
+###	## Principles of operation ###
+###	1. Work in stages
+###	2. For each stage, check first if state change is necessary; idempotent
+###	3. Direct all work from primgmt via pdsh
+###	4. If a stage fails, bail out.  Admin must fix, then can re-run script (see #2)
+###	5. All state changes prefixed with \$DRYRUN so they can be echoed instead of executed
+###	6. Should work on both iscsi and nfsroot clusters, and clusters with or without altmgmt
+###	##############################
+###END_OF_DESCRIPTION
+###}
+
+opt_logfile="${LOGBASE}/reboot-test.$(date +%s).log"
+
+function setup_log {
+	mkdir -p "$LOGBASE"
+	echo "$(date --rfc-3339=seconds) $0: Start" > $opt_logfile || {
+		echo "ERROR: Unable to create log file: $!"
+		exit 1
+	}
+}
+setup_log
+
+function error {
+	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2 
+}
+
+function log {
+	echo "$(date --rfc-3339=seconds) $0: $*" | tee -a $opt_logfile
+}
+###
+#### Argument handling
+###force_mgmt_reboot=""
+###if [ $# -gt 0 ] ; then
+###	if [ $1 = force_mgmt_reboot ] ; then
+###		force_mgmt_reboot="yes"
+###	elif [ $1 = describe ] ; then
+###		usage
+###		echo
+###		describe
+###		echo
+###		error "Nothing updated."
+###		exit 1
+###	fi
+###
+###	if [ $1 != force_mgmt_reboot ] ; then
+###		usage
+###		echo
+###		error "Unknown argument '$1'"
+###		exit 1
+###	fi
+###fi
+###
+###if ! nodeattr pacemaker ; then
+###	error "only for use on Lustre clusters"
+###	exit 1
+###fi
+###
+###if [ -z $(nodeattr -q mds) ] ; then
+###	error "only for use on Lustre clusters"
+###	exit 1
+###fi
+###
+###if ! nodeattr primgmt ; then
+###	error "must be run from primgmt"
+###	exit 1
+###fi
+###
+###if [ $(id -u) -ne 0 ]; then
+###	error "must be run as root"
+###	exit 1
+###fi
+###
+####set -x
+###
+###desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
+###desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
+###use_iscsi=$(nodeattr -q 'mds&&iscsi')
+###
+###function actual_toss_version {
+###	local funcname="actual_toss_version"
+###	local node=$1
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	local actual=$(${PDSH} -N -w e${node} distro_version | awk '{print $NF}')
+###
+###	echo $actual
+###}
+###
+###function running_kernel {
+###	local funcname="running_kernel"
+###	local node=$1
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	echo $(${PDSH} -N -w e${node} uname -r)
+###}
+###
+###function update_required {
+###	local funcname="update_required"
+###	local actual=$1
+###	local desired=$2
+###
+###	if [ -z "$actual" ]; then
+###		error "$funcname: missing argument actual"
+###		exit 2
+###	fi
+###
+###	if [ -z "$desired" ]; then
+###		error "$funcname: missing argument desired"
+###		exit 2
+###	fi
+###
+###	# update from release candidates, even though
+###	# rpmdev-vercmp says they are newer than the
+###	# final release.
+###	if [[ "$actual" =~ rc[0-9]$ ]]; then
+###		return 0
+###	fi
+###
+###	rpmdev-vercmp "${actual}" "${desired}" >/dev/null
+###	local rc=$?
+###	if [ $rc -eq 12 ]; then
+###		# desired is newer
+###		return 0
+###	else
+###		return 1
+###	fi
+###}
+###
+###function want_toss_update {
+###	local funcname="want_toss_update"
+###	local node=$1
+###	local desired=$2
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	if [ -z "$desired" ]; then
+###		error "$funcname: missing argument desired"
+###		exit 2
+###	fi
+###
+###	actual=$(actual_toss_version ${node})
+###
+###	update_required $actual $desired
+###}
+###
+###function want_reboot {
+###	local funcname="want_reboot"
+###	local node=$1
+###	local desired=$2
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	if [ -z "$desired" ]; then
+###		error "$funcname: missing argument desired"
+###		exit 2
+###	fi
+###
+###	local running=$(running_kernel $node)
+###	update_required $running $desired
+###}
+###
+###function update_mgmt_node {
+###	local funcname="update_mgmt_node"
+###	local node=$1
+###	local version=$2
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	if [ -z "$version" ]; then
+###		error "$funcname: missing argument version"
+###		exit 2
+###	fi
+###
+###	# XXX TODO: Possibly detect an intalled toss RC and deal correctly
+###
+###	log "$funcname: UPDATING node $node to $version"
+###	local tut=${TUTBIN}/${version}
+###
+###	if [ "$(${PDSH} -w ${node} test -x $tut && echo OK)" = "OK" ]; then
+###		if nodeattr $node pacemaker; then
+###			if [ "$($PDSH -w $node systemctl is-active pacemaker)" != "active" ]; then
+###				log "$funcname: Pacemaker not running on $node for unknown reason. Continuing with update."
+###			else
+###				# stop pacemaker first as it may be updated
+###				log "$funcname: stopping pacemaker during node $node update"
+###				$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+###			fi
+###		fi
+###		log "$funcname: Running tut update script on node $node"
+###		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
+###		local rc=$?
+###		if [ $rc -ne 0 ]; then
+###			error "$tut update script failed on node $node."
+###			exit 4
+###		fi
+###
+###		if want_toss_update ${node} ${version} ; then
+###			error "$tut on $node did not change toss to ${version}.  Update, run cfagentk, and start pacemaker if necessary."
+###			exit 4
+###		fi
+###
+###		log "$funcname: Running cfagent -K on node $node"
+###		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
+###		if nodeattr $node pacemaker; then
+###			log "$funcname: Starting pacemaker on node $node"
+###			$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
+###
+###			log "$funcname: Waiting for pacemaker to report all Lustre online"
+###			wait_for_pacemaker_all_online 360 "tut update completed but pacemaker does not say all lustre resources online.  Fix issue, start pacemaker, and re-run lustre-mud"
+###		fi
+###
+###		log "$funcname: node $node updating IB firmware"
+###		$DRYRUN ${PDSH_LONG} -w $node /sbin/ib_burn_fw
+###	else
+###		error "$tut update script is not executable on node $node."
+###		exit 4
+###	fi
+###}
+###
+###function reboot_node {
+###	local funcname="reboot_node"
+###	local node=$1
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	log "$funcname: REBOOTING node $node"
+###	if nodeattr $node pacemaker ; then
+###		log "$funcname: stopping pacemaker on node $node for reboot"
+###		$DRYRUN ${PDSH} -w e${node} $DRYRUN pcs cluster kill
+###	fi
+###
+###	if nodeattr $node mgmt ; then
+###		log "$funcname: umounting file systems on node $node for reboot"
+###		$DRYRUN ${PDSH} -w e${node} $DRYRUN sync
+###		$DRYRUN ${PDSH} -w e${node} $DRYRUN umount -a -l -t nfs
+###	fi
+###	$DRYRUN ${PDSH} -w e${node} reboot
+###	# XXX TODO: detect if reboot did not occur and exit
+###}
+
+# Wait until the specified host(s) are 'up' per whatsup and multi-user.target was reached
+# timeout is in seconds
+function wait_for_hostlist_up {
+	local funcname="wait_for_hostlist_up"
+	local hostlist=$1
+	local timeout=$2
+
+	if [ -z "$hostlist" ]; then
+		error "$funcname: missing argument hostlist"
+		exit 2
+	fi
+
+	if [ -z "$timeout" ]; then
+		error "$funcname: missing argument timeout"
+		exit 2
+	fi
+
+	local start=$(date +%s)
+	local end=$((start + timeout))
+
+	log "$funcname: waiting for hosts $hostlist to come up"
+
+	local are_at_multiuser=""
+	local are_up=""
+	local active_nodes=""
+	while [ $(date +%s) -lt $end ]; do
+		are_up=$(whatsup -u $hostlist)
+		if [ "$are_up" = "$hostlist" ] ; then
+			log "$funcname: whatsup reports all hosts up"
+			break
+		fi
+		sleep 1
+	done
+
+	if [ $(date +%s) -lt $end ]; then
+		log "$funcname: Checking status multiuser-target."
+
+		while [ $(date +%s) -lt $end ]; do
+			active_nodes=$($PDSH -w e${hostlist} systemctl is-active multi-user.target | grep -w active | dshbak -c | grep $(nodeattr -V -U cluster) )
+			if [ "$active_nodes" = "" ]; then
+				# all nodes down
+				sleep 1
+				continue
+			fi
+
+			    # pdsh uses the e-names
+			if [ "e$hostlist" = "$active_nodes" ]; then
+				are_at_multiuser="yes"
+				break
+			fi
+
+			sleep 1
+		done
+	fi
+
+
+	if [ "$are_at_multiuser" != "yes" ]; then
+		log "$funcname: whatsup reports up: $(whatsup -u $hostlist)"
+		log "$funcname: multi-user.target active nodes $active_nodes"
+		error "$funcname: $hostlist not all at multi-user.target after $timeout seconds"
+		exit 7
+	else
+		log "$funcname: nodes $active_nodes report multi-user.target active"
+	fi
+}
+
+###function update_mgmt_nodes {
+###	local funcname="update_mgmt_nodes"
+###	local desired_toss=$1
+###	local desired_kernel=$2
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "$funcname: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	if [ -z "$desired_kernel" ]; then
+###		error "$funcname: missing argument desired_kernel"
+###		exit 2
+###	fi
+###
+###	altmgmt=$(nodeattr -q altmgmt)
+###	if [ -n "$altmgmt" ]; then
+###		if [ $(hostlist --count $altmgmt) -gt 1 ]; then
+###			error "unable to correctly handle clusters with >1 altmgmt node.  Exiting."
+###			exit 2
+###		fi
+###	fi
+###
+###	for gender in altmgmt primgmt; do
+###		log "$funcname: Checking $gender nodes"
+###
+###		node=$(nodeattr -q $gender)
+###		if [ -n "$node" ]; then
+###			if want_toss_update ${node} ${desired_toss}; then
+###				echo $0: $node: $gender toss_update_required from $(actual_toss_version ${node}) to $desired_toss
+###				update_mgmt_node $node ${desired_toss}
+###			else
+###				log "$funcname: $node: $gender no update reqd, already running toss $desired_toss"
+###			fi
+###
+###			if [ -n "$force_mgmt_reboot" ] || want_reboot ${node} ${desired_kernel}; then
+###				echo $node: $gender reboot from $(running_kernel ${node}) to $desired_kernel
+###				reboot_node $node
+###				wait_for_hostlist_up $node 300
+###			else
+###				log "$funcname: $node: $gender no reboot reqd, already running kernel $desired_kernel"
+###			fi
+###		else
+###			log "$funcname: No nodes with gender $gender"
+###		fi
+###	done
+###}
+###
+###function get_image_name {
+###	local funcname="get_image_name"
+###	local iscsi_image_count=$(nodeattr -V iscsi | sort -u | wc -l)
+###	local nfsroot_image_count=$(nodeattr -V nfsroot | sort -u | wc -l)
+###
+###	local imgname=""
+###	if [ -n "$use_iscsi" ]; then
+###		if [ $iscsi_image_count -ne 1 ]; then
+###			error "$funcname: script only handles clusters with 1 iscsi image"
+###			exit 2
+###		fi
+###		imgname=$(nodeattr -V iscsi | head -n1)
+###	else
+###		if [ $nfsroot_image_count -ne 1 ]; then
+###			error "$funcname: script only handles clusters with 1 nfsroot image"
+###			exit 2
+###		fi
+###		imgname=$(nodeattr -V nfsroot | head -n1 | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://')
+###		imgname=$(echo $imgname | sed "s/.$(arch)//")
+###	fi
+###
+###	echo $imgname
+###}
+###
+###function is_image_ready {
+###	local desired_toss=$1
+###	local funcname="is_image_ready"
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "$funcname: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	local image_name=$(get_image_name)
+###	local image_path=/tftpboot/images/${image_name}.$(arch)
+###	local image_ready=1
+###
+###	log "$funcname: checking image $image_name for readiness: use_iscsi $use_iscsi"
+###
+###	if [ -n "$use_iscsi" ]; then
+###		image_path=/tftpboot/images/${image_name}.$(arch).latest
+###		if [ $(losetup | grep -c -w $image_name) -gt 0 ]; then
+###			error "$funcname: image $image_name already loopback mounted; umount and retry"
+###			exit 2
+###		fi
+###	fi
+###
+###	log "$funcname: checking image $image_name at $image_path"
+###
+###	if [ -h $image_path ]; then
+###		local mount_path=$image_path
+###		local real_image_name=$(basename $(realpath $image_path))
+###		local mounted=""
+###
+###		if [ -n "$use_iscsi" ]; then
+###			mount_path=/mnt/${image_name}
+###			mkdir -p $mount_path
+###			log "$funcname: mounting iscsi image $image_name at $mount_path"
+###			if mount -o loop,ro $image_path $mount_path; then
+###				mounted=yes
+###			fi
+###		fi
+###
+###		if [ -d ${mount_path}/etc ]; then
+###			local has_big_diff="yes"
+###			local is_activated="yes"
+###			# Check TOSS version and distro_diff
+###			local image_version=$(chroot $mount_path distro_version | sed 's/toss //')
+###			if [ $image_version = $desired_toss ]; then
+###				local image_diff=$(chroot $mount_path distro_diff | wc -l)
+###				if [ $image_diff -lt 30 ]; then
+###					image_ready=0
+###					has_big_diff="no"
+###				fi
+###			fi
+###
+###			# Check that it's been activated
+###			if [ -n "$use_iscsi" ]; then
+###				if [ ! -f /tftpboot/images/.$real_image_name ]; then
+###					image_ready=1
+###					is_activated="no"
+###				fi
+###			else
+###				if [ ! -f ${image_path}/etc/passwd ]; then
+###					image_ready=1
+###					is_activated="no"
+###				fi
+###			fi
+###			log "$funcname: image $image_name big_diff $has_big_diff activated $is_activated version $image_version"
+###		else
+###			log "$funcname: image $image_name at $image_path is damaged or incomplete"
+###		fi
+###
+###		if [ "$mounted" = "yes" ]; then
+###			umount $mount_path
+###		fi
+###	fi
+###
+###	log "$funcname: image $image_name ready $image_ready (0 is yes, 1 is no)"
+###	return $image_ready
+###}
+###
+###function create_image {
+###	local funcname="create_image"
+###	local desired_toss=$1
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "$funcname: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	if [ $(arch) != "x86_64" ]; then
+###		error "$funcname: script untested with arch $(arch)"
+###		exit 2
+###	fi
+###
+###	local image_name=$(get_image_name)
+###
+###	local lustre_group="lustre_2.10"
+###	nodeattr lustre212 && lustre_group="lustre_2.12"
+###	nodeattr lustre28 && lustre_group="lustre_2.8"
+###
+###	local nbd_size_opt=""
+###	if [ -n "$use_iscsi" ]; then
+###		nbd_size_opt="-b ${NBD_SIZE}"
+###	fi
+###
+###	log "$funcname: creating image name $image_name lustre version $lustre_group iscsi $use_iscsi"
+###	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} base netroot $(arch) ${lustre_group}
+###
+###	log "$funcname: activating image name $image_name iscsi $use_iscsi"
+###	local nbd_size_opt=""
+###	if [ -n "$use_iscsi" ]; then
+###		$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
+###	else
+###		$DRYRUN /tftpboot/scripts/activate_image -i ${image_name} -l
+###	fi
+###
+###	if [ -z "$DRYRUN" ]; then
+###		if ! is_image_ready $desired; then
+###			error "$funcname: failed to validate new image"
+###			exit 2
+###		fi
+###	fi
+###}
+###
+###function update_firmware {
+###	local funcname="update_firmware"
+###	log "$funcname: updating firmware with ib_burn_fw"
+###	$DRYRUN $PDSH        -f 128 -av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
+###	$DRYRUN $PDSH_MEDIUM -f 128 -av /sbin/ib_burn_fw
+###	$DRYRUN $PDSH        -f 128 -av -X cfhost umount /usr/share/ib_firmware
+###}
+###
+#### Wait until the specified host(s) have a lustre target mounted
+#### timeout is in seconds
+###function wait_for_lustre_started {
+###	local funcname="wait_for_lustre_started"
+###	local hostlist=$1
+###	local timeout=$2
+###
+###	if [ -z "$hostlist" ]; then
+###		error "$funcname: missing argument hostlist"
+###		exit 2
+###	fi
+###
+###	if [ -z "$timeout" ]; then
+###		error "$funcname: missing argument timeout"
+###		exit 2
+###	fi
+###
+###	local start=$(date +%s)
+###	local end=$((start + timeout))
+###
+###	log "$funcname: waiting for nodes $hostlist to have their lustre target mounted"
+###	local targets_mounted=""
+###	while [ $(date +%s) -lt $end ]; do
+###		sleep 1
+###		local lustre_with_targets=$($PDSH -w e${hostlist} 'df -h -t lustre | xargs --no-run-if-empty' | wc -l)
+###		if [ $lustre_with_targets -eq $(hostlist -c $hostlist) ]; then
+###			targets_mounted="yes"
+###			break
+###		fi
+###	done
+###
+###	if [ "$targets_mounted" != "yes" ]; then
+###		error "lustre targets not mounted on $hostlist after $timeout seconds"
+###		exit 2
+###	fi
+###	log "$funcname: confirmed nodes $hostlist have their lustre targets mounted"
+###}
+###
+#### Wait until the specified host(s) have pools imported
+#### timeout is in seconds
+###function wait_for_zpools_imported {
+###	local funcname="wait_for_zpools_imported"
+###	local hostlist=$1
+###	local timeout=$2
+###
+###	if [ -z "$hostlist" ]; then
+###		error "$funcname: missing argument hostlist"
+###		exit 2
+###	fi
+###
+###	if [ -z "$timeout" ]; then
+###		error "$funcname: missing argument timeout"
+###		exit 2
+###	fi
+###
+###	local start=$(date +%s)
+###	local end=$((start + timeout))
+###
+###	log "$funcname: waiting for nodes $hostlist to have their pools imported"
+###	local pools_imported=""
+###	while [ $(date +%s) -lt $end ]; do
+###		sleep 1
+###		local nodes_with_online=$($PDSH -w e${hostlist} 'zpool list | grep ONLINE | xargs --no-run-if-empty' | wc -l)
+###		if [ $nodes_with_online -eq $(hostlist -c $hostlist) ]; then
+###			pools_imported="yes"
+###			break
+###		fi
+###	done
+###
+###	if [ "$pools_imported" != "yes" ]; then
+###		error "pools not imported from $hostlist after $timeout seconds"
+###		exit 2
+###	fi
+###	log "$funcname: confirmed nodes $hostlist have their pools imported"
+###}
+###
+#### Wait until the specified host(s) have no pools imported
+#### timeout is in seconds
+###function wait_for_zpools_exported {
+###	local funcname="wait_for_zpools_exported"
+###	local hostlist=$1
+###	local timeout=$2
+###
+###	if [ -z "$hostlist" ]; then
+###		error "$funcname: missing argument hostlist"
+###		exit 2
+###	fi
+###
+###	if [ -z "$timeout" ]; then
+###		error "$funcname: missing argument timeout"
+###		exit 2
+###	fi
+###
+###	local start=$(date +%s)
+###	local end=$((start + timeout))
+###
+###	log "$funcname: waiting for nodes $hostlist to have their pools exported"
+###	local pools_exported=""
+###	while [ $(date +%s) -lt $end ]; do
+###		sleep 1
+###		if whatsup -d $hostlist | grep -q -w $hostlist ; then
+###			pools_exported="yes"
+###			break
+###		fi
+###
+###		if [ "no pools available" = "$($PDSH -N -w e${hostlist} zpool list)" ]; then
+###			pools_exported="yes"
+###			break
+###		fi
+###	done
+###
+###	if [ "$pools_exported" != "yes" ]; then
+###		error "pools not exported from $hostlist after $timeout seconds"
+###		# no exit here, because node will be fenced and process will continue
+###	else
+###		log "$funcname: confirmed nodes $hostlist have their pools exported"
+###	fi
+###}
+###
+#### Wait for pacemaker to report all services online
+#### timeout is in seconds
+###function wait_for_pacemaker_all_online {
+###	local funcname="wait_for_pacemaker_all_online"
+###	local timeout=$1
+###	shift
+###	local message="$@"
+###
+###	if [ -z "$timeout" ]; then
+###		error "$funcname: missing argument timeout"
+###		exit 2
+###	fi
+###
+###	if [ -z "$message" ]; then
+###		error "$funcname: missing argument message"
+###		exit 2
+###	fi
+###
+###	if ! systemctl is-active pacemaker; then
+###		error "$funcname: pacemaker is not running. Please fix, start pacemaker, and re-run lustre-mud.  $message"
+###		exit 2
+###	fi
+###
+###	log "${funcname}: waiting for pacemaker to report all Lustre resources online"
+###
+###	local start=$(date +%s)
+###	local end=$((start + timeout))
+###
+###	local resources_online="no"
+###	while [ $(date +%s) -lt $end ]; do
+###		sleep 1
+###		if [ $(pcs status | grep 'ocf::llnl:lustre' | grep -v -w Started | wc -l) -eq 0 ]; then
+###			resources_online="yes"
+###			break;
+###		fi
+###	done
+###
+###	if [ "$resources_online" != "yes" ]; then
+###		local resources=$(pcs status | grep 'ocf::llnl:lustre' | grep -v -w Started | awk '{print $1}' | xargs)
+###		log "${funcname} Resources not running: $resources"
+###		error "${funcname} pacemaker resources not all online after ${timeout} seconds.  $message"
+###		exit 5
+###	fi
+###	log "${funcname}: pacemaker reports all lustre resources online"
+###
+###	# Warn if some nodes offline
+###	local problem_nodes=$(pcs status nodes | grep -vw -e Online | sed 's/^.*://' | sort -u | xargs)
+###	if [ -n "${problem_nodes}" ]; then
+###		log "${funcname} WARNING: Nodes not online (see pcs status): ${problem_nodes}"
+###	fi
+###}
+###
+###function pcs_node_status {
+###	local funcname="pcs_node_status"
+###	local node=$1
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	pcs status nodes | grep -w $node | awk '{print $1}'
+###}
+###
+###function lustre_node_ready {
+###	local funcname="lustre_node_ready"
+###	local node=$1
+###	local desired_toss=$2
+###	local ready=0
+###
+###	if [ -z "$node" ]; then
+###		error "$funcname: missing argument node"
+###		exit 2
+###	fi
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "$funcname: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	local new_toss_version=$(actual_toss_version $node)
+###	local zpool_imported=$($PDSH -w e${node} zpool list $node 2> /dev/null)
+###	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
+###
+###	if [ "$new_toss_version" != $desired_toss ]; then
+###		ready=3
+###	fi
+###
+###	if [ -z "$zpool_imported" -a "$zpool_present" != $node ]; then
+###		ready=3
+###	fi
+###
+###	return $ready
+###}
+###
+###function lustre_nodes_needing_update {
+###	local funcname="lustre_nodes_needing_update"
+###	local desired_toss=$1
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "${funcname}: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	local nodelist=$(nodeattr -q 'mds||oss')
+###
+###	# Build list of nodes not already updated
+###	local need_update=""
+###	for node in $(hostlist --expand --delimiters ' ' $nodelist); do
+###		if want_toss_update ${node} ${desired_toss} ; then
+###			need_update="$need_update $node"
+###		fi
+###	done
+###
+###	if [ -z "$need_update" ]; then
+###		echo ""
+###	else
+###		hostlist $need_update
+###	fi
+###}
+###
+###function update_lustre_nodes {
+###	local funcname="update_lustre_nodes"
+###	local desired_toss=$1
+###	local nodelist=$2
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "${funcname}: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	if [ -z "$nodelist" ]; then
+###		error "${funcname}: missing argument nodelist"
+###		exit 2
+###	fi
+###
+###	local oss=$(hostlist --intersection $(nodeattr -q oss) $nodelist)
+###	local mds=$(hostlist --intersection $(nodeattr -q mds) $nodelist)
+###
+###	# Proceeed with update
+###	log "${funcname}: stopping pacemaker and lustre"
+###	# This is faster than systemctl stop pacemaker because of ordering
+###	# and concurrence
+###	$DRYRUN pcs cluster kill
+###	$DRYRUN timeout --kill-after=6m 5m pdsh -f 128 -w e${oss} shutdown -h now
+###	$DRYRUN timeout --kill-after=6m 5m pdsh -f 128 -w e${mds} shutdown -h now
+###
+###	log "${funcname}: powering off lustre servers $nodelist"
+###	$DRYRUN pm -0 $nodelist
+###	sleep 2
+###	if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
+###		$DRYRUN pm -0 $nodelist
+###		sleep 2
+###		if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
+###			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
+###			$DRYRUN exit 2
+###		fi
+###	fi
+###
+###	log "${funcname}: powering on all lustre servers"
+###	$DRYRUN pm -1 $nodelist
+###	sleep 2
+###	if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
+###		$DRYRUN pm -1 $nodelist
+###		sleep 2
+###		if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
+###			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
+###			exit 2
+###		fi
+###	fi
+###
+###	log "${funcname}: waiting for lustre servers to boot"
+###	sleep 180
+###	wait_for_hostlist_up $nodelist 600
+###
+###	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
+###	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
+###
+###	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
+###		error "${funcname}: rebooted nodes $nodelist are not all $desired_toss.  Fix the issue then re-run lustre-mud"
+###		exit 2
+###	fi
+###
+###	if [ $badnode_count != 0 ]; then
+###		error "${funcname}: some rebooted nodes in $nodelist have badnode.  Fix the issue then re-run lustre-mud"
+###		exit 2
+###	fi
+###
+###	$DRYRUN $PDSH -w e${nodelist} 'zpool import $(hostname)'
+###	wait_for_zpools_imported ${nodelist} 60
+###
+###	$DRYRUN systemctl start pacemaker
+###	sleep 4
+###	if ! systemctl is-active pacemaker; then
+###		error "$funcname: pacemaker failed to start after lustre node reboots. Fix the issue, start pacemaker, and verify the TOSS update of the cluster via distro_version, distro_diff, etc."
+###		exit 4
+###	fi
+###}
+###
+###function bounce_sample_node {
+###	local funcname="bounce_sample_node"
+###	local desired_toss=$1
+###
+###	if [ -z "$desired_toss" ]; then
+###		error "$funcname: missing argument desired_toss"
+###		exit 2
+###	fi
+###
+###	if ! systemctl is-active pacemaker; then
+###		error "$funcname: pacemaker is not running. Please fix issue, start pacemaker, and re-run lustre-mud"
+###		exit 2
+###	fi
+###
+###	# Could instead take highest numbered Online node from "pcs status nodes" output
+###	local sample_node=$(nodeattr -n oss | tail -n1)
+###	#local sample_node=$(nodeattr -n mds | tail -n1)
+###	local partner_node=$(ldev --hostname $sample_node -p)
+###
+###	log "$funcname: bouncing node $sample_node to test image failover"
+###
+###	local sample_node_status=$(pcs_node_status $sample_node)
+###	local partner_node_status=$(pcs_node_status $partner_node)
+###
+###	log "$funcname: $sample_node $sample_node_status partner: $partner_node $partner_node_status"
+###
+###	if [ "$partner_node_status" != "Online:" ]; then
+###		error "$funcname: sample node parter $partner_node not Online, fix and retry"
+###		exit 2
+###	fi
+###
+###	log "$funcname: putting node $sample_node into standby"
+###	$DRYRUN pcs node standby $sample_node
+###	log "$funcname: waiting for node $sample_node to export pools"
+###	$DRYRUN wait_for_zpools_exported $sample_node 300
+###	log "$funcname: fencing node $sample_node"
+###	$DRYRUN pcs stonith fence $sample_node
+###	# XXX TODO make below more robust
+###	sleep 120
+###	# power the node back on in case it was powered off instead of rebooted by stonith
+###	log "$funcname: waiting for node $sample_node to come back up"
+###	$DRYRUN pm -1 $sample_node
+###	wait_for_hostlist_up $sample_node 480
+###
+###	if ! lustre_node_ready $sample_node $desired_toss; then
+###		error "$funcname: sample node $sample_node update failed, proceed manually"
+###		exit 2
+###	fi
+###
+###	log "$funcname: taking node $sample_node out of standby"
+###	$DRYRUN pcs node unstandby $sample_node
+###	wait_for_zpools_imported $sample_node 300
+###	log "$funcname: zpool imported on $sample_node successfully"
+###
+###	wait_for_lustre_started $sample_node 120
+###	log "$funcname: Lustre target started on $sample_node successfully"
+###}
+
+summarize_status() {
+	local funcname="summarize_status"
+	local desired_toss=$1
+
+	if [ -z "$desired_toss" ]; then
+		error "$funcname: missing argument desired_toss"
+		exit 2
+	fi
+
+	echo ================================================
+	echo Up/Down Nodes:
+	log Nodes up: $(whatsup -u)
+	log TOSS versions: $($PDSH -Av distro_version | grep -w $desired_toss | dshbak -c | sed 's/---*//' | xargs)
+	log Running kernel: $($PDSH -Av uname -r | dshbak -c |  sed 's/---*//' | xargs)
+	log Lines in distro_diff: $($PDSH -Av 'distro_diff | wc -l' | dshbak -c |  sed 's/---*//' | xargs)
+	echo ================================================
+}
+
+##
+## Main
+##
+
+start_timestamp=$(date +%s)
+log "start timestamp $start_timestamp"
+
+# so our cwd doesn't disappear when we umount and restart
+cd /root
+
+# verify links to the repo exist
+repo_rpm="/repo/toss/$(distro_version --major)/current/$(arch)/toss-release-${desired}*.rpm"
+if ! ls $repo_rpm > /dev/null 2>&1 ; then
+	error "main: unable to create image, $repo_rpm does not exist"
+	exit 2
+fi
+
+# make sure we have current configs in place
+log "main: Running cfagent -K on primgmt before starting"
+$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
+
+if ! is_image_ready $desired; then
+	create_image $desired
+else
+	log "Image Ready"
+fi
+
+update_mgmt_nodes $desired $desired_kernel
+
+nodelist=$(lustre_nodes_needing_update $desired)
+if [ -n "$nodelist" ] ; then
+    log "main: lustre servers $nodelist need to be updated"
+
+	update_firmware
+
+	bounce_sample_node $desired
+
+	update_lustre_nodes $desired $nodelist
+else
+	log "lustre servers already running toss $desired"
+fi
+
+wait_for_pacemaker_all_online 360 "Update completed but Pacemaker not running or not all resources online.  Fix the issue(s) and verify the update was successful."
+
+# verify that everything was updated
+nodelist=$(lustre_nodes_needing_update $desired)
+exit_code=0
+if [ -n "$nodelist" ] ; then
+	echo "WARNING: Nodes were not updated: $nodelist."
+	echo "Verify below:"
+	exit_code=1
+else
+	echo "All nodes appear to be updated.  Verify below:"
+fi
+
+summarize_status $desired | less
+
+log "end timestamp $(date +%s) duration $(( ($(date +%s) - start_timestamp)/60 )) minutes"
+
+exit $exit_code
