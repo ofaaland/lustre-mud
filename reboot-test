@@ -133,12 +133,14 @@ function reboot_nodes {
 		exit 2
 	fi
 
+	local powerman_delay=5
+
 	log "${funcname}: powering off nodes $nodelist"
 	$DRYRUN pm -0 $nodelist
-	sleep 2
+	sleep $powerman_delay
 	if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
 		$DRYRUN pm -0 $nodelist
-		sleep 2
+		sleep $powerman_delay
 		if [ $(pm -q $nodelist | awk '/off:/ {print $NF}') != $nodelist ]; then
 			error "${funcname}: failed to power off nodes $nodelist, proceed manually"
 			$DRYRUN exit 3
@@ -147,16 +149,15 @@ function reboot_nodes {
 
 	log "${funcname}: powering on all nodes"
 	$DRYRUN pm -1 $nodelist
-	sleep 2
+	sleep $powerman_delay
 	if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
 		$DRYRUN pm -1 $nodelist
-		sleep 2
+		sleep $powerman_delay
 		if [ $(pm -q $nodelist | awk '/on:/ {print $NF}') != $nodelist ]; then
 			error "${funcname}: failed to power on nodes $nodelist, proceed manually"
 			exit 3
 		fi
 	fi
-
 
 	log "${funcname}: waiting for nodes to boot"
 	# it takes some time for whatsup to recognize nodes are down,
