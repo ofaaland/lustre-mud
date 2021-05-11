@@ -67,7 +67,6 @@ function setup_log {
 		exit 1
 	}
 }
-setup_log
 
 function error {
 	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2
@@ -77,21 +76,28 @@ function log {
 	echo "$(date --rfc-3339=seconds) $0: $*" | tee -a $opt_logfile
 }
 
+# Handle "describe" or "help" arguments before we start logging.
+# That way the user need not be root to see how to use the script.
+force_mgmt_reboot=""
+if [ $# -gt 0 ] ; then
+	if [ $1 = describe ] || [ $1 = help ] || [ $1 = "-h" ] || [ $1 = "--help" ]; then
+		usage
+		echo
+		describe
+		echo
+		echo "Nothing updated."
+		exit 1
+	fi
+fi
+
+setup_log
+
 # Argument handling
 force_mgmt_reboot=""
 if [ $# -gt 0 ] ; then
 	if [ $1 = force_mgmt_reboot ] ; then
 		force_mgmt_reboot="yes"
-	elif [ $1 = describe ] ; then
-		usage
-		echo
-		describe
-		echo
-		error "Nothing updated."
-		exit 1
-	fi
-
-	if [ $1 != force_mgmt_reboot ] ; then
+	else
 		usage
 		echo
 		error "Unknown argument '$1'"
