@@ -69,11 +69,11 @@ function setup_log {
 }
 
 function error {
-	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2
+	echo "$(date --rfc-3339=seconds) $(basename $0): ERROR $*" | tee -a $opt_logfile >&2
 }
 
 function log {
-	echo "$(date --rfc-3339=seconds) $0: $*" | tee -a $opt_logfile
+	echo "$(date --rfc-3339=seconds) $(basename $0): $*" | tee -a $opt_logfile
 }
 
 # Handle "describe" or "help" arguments before we start logging.
@@ -104,6 +104,8 @@ if [ $# -gt 0 ] ; then
 		exit 1
 	fi
 fi
+
+log "Running $0"
 
 if ! nodeattr pacemaker ; then
 	error "only for use on Lustre clusters"
