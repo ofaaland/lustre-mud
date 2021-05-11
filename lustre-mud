@@ -873,7 +873,7 @@ function update_lustre_nodes {
 
 	log "${funcname}: waiting for lustre servers to boot"
 	sleep 180
-	wait_for_hostlist_up $nodelist 600
+	wait_for_hostlist_up $nodelist 900
 
 	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
