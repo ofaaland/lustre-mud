@@ -70,7 +70,7 @@ function setup_log {
 setup_log
 
 function error {
-	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2 
+	echo "$(date --rfc-3339=seconds) $0: ERROR $*" | tee -a $opt_logfile >&2
 }
 
 function log {
