@@ -411,7 +411,7 @@ function update_mgmt_nodes {
 			if [ -n "$force_mgmt_reboot" ] || want_reboot ${node} ${desired_kernel}; then
 				echo $node: $gender reboot from $(running_kernel ${node}) to $desired_kernel
 				reboot_node $node
-				wait_for_hostlist_up $node 300
+				wait_for_hostlist_up $node 600
 			else
 				log "$funcname: $node: $gender no reboot reqd, already running kernel $desired_kernel"
 			fi
