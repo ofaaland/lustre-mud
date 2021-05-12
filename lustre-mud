@@ -106,8 +106,6 @@ if [ $# -gt 0 ] ; then
 	fi
 fi
 
-log "Running $0"
-
 if ! nodeattr pacemaker ; then
 	error "only for use on Lustre clusters"
 	exit 1
