@@ -1035,6 +1035,9 @@ fi
 log "main: Running cfagent -K on primgmt before starting"
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 
+# make sure genders specifies a lustre yum group
+check_lustre_group $(determine_lustre_group)
+
 if ! is_image_ready $desired; then
 	create_image $desired
 else
