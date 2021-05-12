@@ -548,6 +548,24 @@ function determine_lustre_group {
 	echo $lustre_group
 }
 
+# necessary because determine_lustre_group must be called
+# like group=$(determine_lustre_group) and so exit call
+# cannot be done insode determine_lustre_group.
+function check_lustre_group {
+	local funcname="check_lustre_group"
+	local lustre_group=$1
+
+	if [ -z "$lustre_group" ]; then
+		error "$funcname: missing argument lustre_group"
+		exit 2
+	fi
+
+	if [ $lustre_group = "error" ]; then
+		error "$funcname: unable to identify lustre version via genders lustre_XXX, e.g. lustre212"
+		exit 2
+	fi
+}
+
 function create_image {
 	local funcname="create_image"
 	local desired_toss=$1
@@ -562,15 +580,18 @@ function create_image {
 		exit 2
 	fi
 
+	check_lustre_group $(determine_lustre_group)
+	local yum_groups="$BASE_YUM_GROUPS $(determine_lustre_group)"
+
 	local image_name=$(get_image_name)
-	local lustre_group=$(determine_lustre_group)
 	local nbd_size_opt=""
 	if [ -n "$use_iscsi" ]; then
 		nbd_size_opt="-b ${NBD_SIZE}"
 	fi
 
-	log "$funcname: creating image name $image_name lustre version $lustre_group iscsi $use_iscsi"
-	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} $BASE_YUM_GROUPS ${lustre_group}
+
+	log "$funcname: creating image name $image_name iscsi $use_iscsi groups $yum_groups"
+	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} ${yum_groups}
 
 	log "$funcname: activating image name $image_name iscsi $use_iscsi"
 	local nbd_size_opt=""
