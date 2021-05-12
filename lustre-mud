@@ -63,7 +63,7 @@ opt_logfile="${LOGBASE}/lustre-mud.$(date +%s).log"
 
 function setup_log {
 	mkdir -p "$LOGBASE"
-	echo "$(date --rfc-3339=seconds) $0: Start" > $opt_logfile || {
+	echo "$(date --rfc-3339=seconds) $(realpath $0): Start" > $opt_logfile || {
 		echo "ERROR: Unable to create log file: $!"
 		exit 1
 	}
