@@ -541,7 +541,8 @@ function is_image_ready {
 					is_activated="no"
 				fi
 			fi
-			log "$funcname: image $image_name big_diff $has_big_diff image_ready $image_ready activated $is_activated"
+			log "$funcname: image $image_name desired_toss $has_desired_toss desired_groups $has_desired_groups small diff $has_small_diff"
+			log "$funcname: image $image_name image_ready $image_ready activated $is_activated"
 		else
 			log "$funcname: image $image_name at $image_path is damaged or incomplete"
 		fi
