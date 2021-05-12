@@ -1048,7 +1048,7 @@ else
 	echo "All nodes appear to be updated.  Verify below:"
 fi
 
-summarize_status $desired | less
+summarize_status $desired
 
 log "end timestamp $(date +%s) duration $(( ($(date +%s) - start_timestamp)/60 )) minutes"
 
