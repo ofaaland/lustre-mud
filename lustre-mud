@@ -492,16 +492,38 @@ function is_image_ready {
 		fi
 
 		if [ -d ${mount_path}/etc ]; then
-			local has_big_diff="yes"
+			local has_desired_groups=1
+			local has_desired_toss=1
+			local has_small_diff=1
 			local is_activated="yes"
-			# Check TOSS version and distro_diff
+
+			# Check TOSS version
 			local image_version=$(chroot $mount_path distro_version | sed 's/toss //')
+			image_version=${image_version:-"unknown"}  # in case chroot fails
 			if [ $image_version = $desired_toss ]; then
-				local image_diff=$(chroot $mount_path distro_diff | wc -l)
-				if [ $image_diff -lt 30 ]; then
-					image_ready=0
-					has_big_diff="no"
-				fi
+				has_desired_toss=0
+			fi
+
+			# Check groups
+			local desired_yum_groups=$(echo $BASE_YUM_GROUPS $(determine_lustre_group) | xargs -n1 | sort | xargs)
+			local image_yum_groups=$(chroot $mount_path distro_diff -i | xargs -n1 | sort | xargs)
+			image_yum_groups=${image_yum_groups:-"unknown"}  # in case chroot fails
+
+			if [ "$desired_yum_groups" = "$image_yum_groups" ]; then
+				has_desired_groups=0
+			fi
+
+			# Check distro_diff
+			local image_diff=$(chroot $mount_path distro_diff | wc -l)
+			image_diff=${image_diff:-"unknown"}  # in case chroot fails
+			if [ $image_diff -lt 30 ]; then
+				has_small_diff=0
+			fi
+
+			log "$funcname: image $image_name toss:$image_version groups:$image_yum_groups distro_diff:$image_diff lines"
+			# Determine if image is ready
+			if [ $has_desired_groups -eq 0 -a $has_desired_toss -eq 0 -a $has_small_diff -eq 0 ]; then
+				image_ready=0
 			fi
 
 			# Check that it's been activated
@@ -516,7 +538,7 @@ function is_image_ready {
 					is_activated="no"
 				fi
 			fi
-			log "$funcname: image $image_name big_diff $has_big_diff activated $is_activated version $image_version"
+			log "$funcname: image $image_name big_diff $has_big_diff image_ready $image_ready activated $is_activated"
 		else
 			log "$funcname: image $image_name at $image_path is damaged or incomplete"
 		fi
