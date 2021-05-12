@@ -6,6 +6,7 @@
 # $Rev$
 ###########################################################################
 
+BASE_YUM_GROUPS="base netroot $(arch)"
 TUTBIN=/admin/tut/bin/updates
 LOGBASE=/root/lustre-mud
 PDSH="pdsh -t2 -u60"
@@ -531,6 +532,24 @@ function is_image_ready {
 	return $image_ready
 }
 
+# determine appropriate yum groups for server image
+function determine_lustre_group {
+	local funcname="determine_lustre_group"
+	local lustre_group="error"
+
+	if nodeattr -Q lustre214; then
+		lustre_group="lustre_2.14"
+	elif nodeattr -Q "lustre212&&zfs2"; then
+		lustre_group="lustre_zfs2"
+	elif nodeattr -Q lustre212; then
+		lustre_group="lustre_2.12"
+	elif nodeattr -Q lustre210; then
+		lustre_group="lustre_2.10"
+	fi
+
+	echo $lustre_group
+}
+
 function create_image {
 	local funcname="create_image"
 	local desired_toss=$1
@@ -546,18 +565,14 @@ function create_image {
 	fi
 
 	local image_name=$(get_image_name)
-
-	local lustre_group="lustre_2.10"
-	nodeattr lustre212 && lustre_group="lustre_2.12"
-	nodeattr lustre28 && lustre_group="lustre_2.8"
-
+	local lustre_group=$(determine_lustre_group)
 	local nbd_size_opt=""
 	if [ -n "$use_iscsi" ]; then
 		nbd_size_opt="-b ${NBD_SIZE}"
 	fi
 
 	log "$funcname: creating image name $image_name lustre version $lustre_group iscsi $use_iscsi"
-	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} base netroot $(arch) ${lustre_group}
+	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} $BASE_YUM_GROUPS ${lustre_group}
 
 	log "$funcname: activating image name $image_name iscsi $use_iscsi"
 	local nbd_size_opt=""
