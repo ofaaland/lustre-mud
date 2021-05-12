@@ -476,6 +476,9 @@ function is_image_ready {
 	fi
 
 	log "$funcname: checking image $image_name at $image_path"
+	if [ -L "$image_path" ]; then
+		log "$funcname: symlink $image_path points to $(realpath $image_path)"
+	fi
 
 	if [ -h $image_path ]; then
 		local mount_path=$image_path
