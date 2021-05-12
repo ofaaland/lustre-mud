@@ -126,6 +126,11 @@ if [ $(id -u) -ne 0 ]; then
 	exit 1
 fi
 
+if [ $(arch) != "x86_64" ]; then
+	error "script untested with arch $(arch)"
+	exit 2
+fi
+
 #set -x
 
 desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
@@ -598,11 +603,6 @@ function create_image {
 
 	if [ -z "$desired_toss" ]; then
 		error "$funcname: missing argument desired_toss"
-		exit 2
-	fi
-
-	if [ $(arch) != "x86_64" ]; then
-		error "$funcname: script untested with arch $(arch)"
 		exit 2
 	fi
 
