@@ -597,6 +597,19 @@ function check_lustre_group {
 	fi
 }
 
+function activate_image {
+	local funcname="activate_image"
+
+	local image_name=$(get_image_name)
+
+	log "$funcname: activating image name $image_name iscsi $use_iscsi"
+	if [ -n "$use_iscsi" ]; then
+		$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
+	else
+		$DRYRUN /tftpboot/scripts/activate_image -i ${image_name} -l
+	fi
+}
+
 function create_image {
 	local funcname="create_image"
 	local desired_toss=$1
@@ -619,13 +632,7 @@ function create_image {
 	log "$funcname: creating image name $image_name iscsi $use_iscsi groups $yum_groups"
 	$DRYRUN create_yum_image -i ${image_name} ${nbd_size_opt} ${yum_groups}
 
-	log "$funcname: activating image name $image_name iscsi $use_iscsi"
-	local nbd_size_opt=""
-	if [ -n "$use_iscsi" ]; then
-		$DRYRUN /tftpboot/scripts/activate_iscsi -i ${image_name}
-	else
-		$DRYRUN /tftpboot/scripts/activate_image -i ${image_name} -l
-	fi
+	activate_image
 
 	if [ -z "$DRYRUN" ]; then
 		if ! is_image_ready $desired; then
