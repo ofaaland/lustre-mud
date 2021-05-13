@@ -59,6 +59,7 @@ cat <<END_OF_DESCRIPTION
 END_OF_DESCRIPTION
 }
 
+progname=$(basename $0)
 opt_logfile="${LOGBASE}/lustre-mud.$(date +%s).log"
 
 function setup_log {
@@ -70,11 +71,11 @@ function setup_log {
 }
 
 function error {
-	echo "$(date --rfc-3339=seconds) $(basename $0): ERROR $*" | tee -a $opt_logfile >&2
+	echo "$(date --rfc-3339=seconds) ${progname}: ERROR $*" | tee -a $opt_logfile >&2
 }
 
 function log {
-	echo "$(date --rfc-3339=seconds) $(basename $0): $*" | tee -a $opt_logfile
+	echo "$(date --rfc-3339=seconds) ${progname}: $*" | tee -a $opt_logfile
 }
 
 # Handle "describe" or "help" arguments before we start logging.
