@@ -644,7 +644,7 @@ function create_image {
 
 	if [ -z "$DRYRUN" ]; then
 		if ! is_image_ready $desired; then
-			error "$funcname: failed to validate new image"
+			error "$funcname: failed to validate image"
 			exit 2
 		fi
 	fi
@@ -1079,10 +1079,23 @@ $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 # make sure genders specifies a lustre yum group
 check_lustre_group $(determine_lustre_group)
 
-if ! is_image_ready $desired; then
-	create_image $desired
-else
+# check whether image is ready; if pre-created and has good contents, activate it
+is_image_ready $desired
+rc=$?
+
+if [ $rc -eq 0 ]; then
 	log "Image Ready"
+elif [ $rc -eq 1 ]; then
+	log "Existing image is good but must be activated."
+	activate_image
+
+	log "Re-validating image after activation"
+	if ! is_image_ready $desired; then
+		error "Image is unusable after activation.  Inspect the image to determine the problem."
+	fi
+elif [ $rc -eq 2 ]; then
+	log "Existing image cannot be used. Creating one."
+	create_image $desired
 fi
 
 update_mgmt_nodes $desired $desired_kernel
