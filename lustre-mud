@@ -488,14 +488,12 @@ function is_image_ready {
 	fi
 
 	log "$funcname: checking image $image_name at $image_path"
-	if [ -L "$image_path" ]; then
-		log "$funcname: symlink $image_path points to $(realpath $image_path)"
-	fi
-
-	if [ -h $image_path ]; then
+	if [ -L $image_path ]; then
 		local mount_path=$image_path
 		local real_image_name=$(basename $(realpath $image_path))
 		local mounted=""
+
+		log "$funcname: symlink $image_path points to $(realpath $image_path)"
 
 		if [ -n "$use_iscsi" ]; then
 			mount_path=/mnt/${image_name}
