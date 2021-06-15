@@ -6,7 +6,7 @@
 # $Rev$
 ###########################################################################
 
-BASE_YUM_GROUPS="base netroot $(arch)"
+BASE_YUM_GROUPS="base netroot ldms_v4 $(arch)"
 TUTBIN=/admin/tut/bin/updates
 LOGBASE=/root/lustre-mud
 PDSH="pdsh -t2 -u60"
