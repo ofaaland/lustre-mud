@@ -541,20 +541,22 @@ function is_image_ready {
 
 			log "$funcname: image $image_name desired_toss $has_desired_toss desired_groups $has_desired_groups small diff $has_small_diff"
 
-			# Check that it's been activated
-			if [ -n "$use_iscsi" ]; then
-				if [ -f /tftpboot/images/.$real_image_name ]; then
-					image_usable=0
-					is_activated="yes"
+			if [ $image_usable -lt 2 ]; then
+				# Check that it's been activated
+				if [ -n "$use_iscsi" ]; then
+					if [ -f /tftpboot/images/.$real_image_name ]; then
+						image_usable=0
+						is_activated="yes"
+					fi
+				else
+					if [ -f ${image_path}/etc/passwd ]; then
+						image_usable=0
+						is_activated="yes"
+					fi
 				fi
-			else
-				if [ -f ${image_path}/etc/passwd ]; then
-					image_usable=0
-					is_activated="yes"
-				fi
+				log "$funcname: image $image_name image_usable $image_usable activated $is_activated"
 			fi
 
-			log "$funcname: image $image_name image_usable $image_usable activated $is_activated"
 		else
 			log "$funcname: image $image_name at $image_path is damaged or incomplete"
 		fi
