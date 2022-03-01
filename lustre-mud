@@ -863,10 +863,12 @@ function lustre_node_ready {
 	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
 
 	if [ "$new_toss_version" != $desired_toss ]; then
+		error "${funcname}: $node expected toss $desired_toss actual is $new_toss_version"
 		ready=3
 	fi
 
 	if [ -z "$zpool_imported" -a "$zpool_present" != $node ]; then
+		error "${funcname}: $node zpool not found: (imported $zpool_imported) (present $zpool_present)"
 		ready=3
 	fi
 
