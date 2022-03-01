@@ -969,9 +969,11 @@ function update_lustre_nodes {
 		exit 2
 	fi
 
-	$DRYRUN $PDSH -w e${nodelist} 'zpool import $(hostname)'
-	wait_for_zpools_imported ${nodelist} 60
+	log "${funcname}: importing pools on all nodes"
+	$DRYRUN $PDSH_MEDIUM -w e${nodelist} 'zpool import $(hostname)'
+	wait_for_zpools_imported ${nodelist} 120
 
+	log "${funcname}: starting pacemaker"
 	$DRYRUN systemctl start pacemaker
 	sleep 4
 	if ! systemctl is-active pacemaker; then
