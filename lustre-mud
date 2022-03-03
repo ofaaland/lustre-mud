@@ -860,8 +860,12 @@ function lustre_node_ready {
 	fi
 
 	local new_toss_version=$(actual_toss_version $node)
+
+	log "${funcname}: checking ${node} for imported pools"
 	local zpool_imported=$($PDSH -w e${node} zpool list $node 2> /dev/null)
-	local zpool_present=$($PDSH -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
+
+	log "${funcname}: checking ${node} for pools available to import"
+	local zpool_present=$($PDSH_LONG -w e${node} zpool import | awk '/pool:/ {print $NF}' | grep -w $node)
 
 	if [ "$new_toss_version" != $desired_toss ]; then
 		error "${funcname}: $node expected toss $desired_toss actual is $new_toss_version"
@@ -972,7 +976,8 @@ function update_lustre_nodes {
 	fi
 
 	log "${funcname}: importing pools on all nodes"
-	$DRYRUN $PDSH_MEDIUM -w e${nodelist} 'zpool import $(hostname)'
+	$DRYRUN $PDSH_LONG -w e${nodelist} 'zpool import $(hostname)'
+	log "${funcname}: zpool import commands returned on all nodes"
 	wait_for_zpools_imported ${nodelist} 120
 
 	log "${funcname}: starting pacemaker"
