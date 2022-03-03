@@ -885,7 +885,8 @@ function lustre_nodes_needing_update {
 		exit 2
 	fi
 
-	local nodelist=$(nodeattr -q 'mds||oss')
+	# mgmt nodes are checked/updated by update_mgmt_nodes
+	local nodelist=$(nodeattr -q '~mgmt')
 
 	# Build list of nodes not already updated
 	local need_update=""
