@@ -1067,7 +1067,7 @@ summarize_status() {
 ##
 
 start_timestamp=$(date +%s)
-log "start timestamp $start_timestamp"
+log "start timestamp $start_timestamp lustre-mud $MUD_VERSION"
 
 # so our cwd doesn't disappear when we umount and restart
 cd /root
