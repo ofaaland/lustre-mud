@@ -1118,12 +1118,12 @@ fi
 
 # make sure we have current configs in place
 if [[ $TOSS_MAJOR_VERSION -eq 3 ]]; then
-	log "$funcname: Running cfagent -K on primgmt"
-	$DRYRUN ${PDSH_LONG} -g primgmt cfagent -K
+	log "$funcname: Running cfagent -K on mgmt nodes"
+	$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
 elif [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
 	for ansible_helper in /sbin/lc-update-etc-ansible /sbin/lc-ansible-pull; do
-		log "$funcname: Running $ansible_helper on cmhost"
-		$DRYRUN ${PDSH_LONG} -g cmhost $ansible_helper
+		log "$funcname: Running $ansible_helper on mgmt nodes"
+		$DRYRUN ${PDSH_LONG} -g mgmt $ansible_helper
 	done
 fi
 
