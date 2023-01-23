@@ -1,0 +1,26 @@
+#!/bin/bash
+set -x
+
+# prep
+#gpgcheck=" --nogpgcheck"
+imgname="lflood"
+tossver="4.2-1rc4"
+lustre="Lustre_2.14"
+#export yum_options="--enablerepo=*${tossver}* --disablerepo=*lustre_2.12* ${gpgcheck}"
+export yum_options="--enablerepo=4.2-1rc4 --enablerepo=4.2-1rc4-lustre_2.14 " #--disablerepo=4.2-1rc4-lustre_2.12 ${gpgcheck}"
+
+# create image
+#create_yum_image -i ${imgname} -y /repo/toss/toss4.local.repo -v ${tossver} Base netroot x86_64 ${lustre} -b30G
+#create_yum_image -i ${imgname} -y /repo/toss/toss4.local.repo -v ${tossver} Base  ${lustre} -b30G
+create_yum_image -i ${imgname} -y /repo/toss/toss4.local.repo -v ${tossver} Base   -b30G
+
+# verify image
+#mkdir /mnt/olaf
+#mount -o loop /tftpboot/images/${imgname}-${tossver}-23754.x86_64.img /mnt/olaf
+#chroot /mnt/olaf distro_diff -i
+#chroot /mnt/olaf distro_version
+#chroot /mnt/olaf distro_diff
+#umount /mnt/olaf
+
+# activate image
+#/tftpboot/scripts/activate_iscsi -i ${imgname}
