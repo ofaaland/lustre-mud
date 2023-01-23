@@ -144,8 +144,8 @@ fi
 
 #set -x
 
-desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
-desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
+desired=$(basename $(realpath /repo/toss/${TOSS_MAJOR_VERSION}/current) | sed s/toss-release-//)
+desired_kernel=$(ls /repo/toss/${TOSS_MAJOR_VERSION}/current/$(arch)/kernel-[0-9]*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
 use_iscsi=$(nodeattr -q 'mds&&iscsi')
 
 function actual_toss_version {
