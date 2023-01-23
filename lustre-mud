@@ -609,12 +609,17 @@ function determine_lustre_group {
 	local funcname="determine_lustre_group"
 	local lustre_group="error"
 
+	local lustre_group_root="lustre"
+	if [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+		lustre_group_root="Lustre"
+	fi
+
 	if nodeattr -Q lustre214; then
-		lustre_group="lustre_2.14"
+		lustre_group="${lustre_group_root}_2.14"
 	elif nodeattr -Q "lustre212&&zfs2"; then
-		lustre_group="lustre_zfs2"
+		lustre_group="${lustre_group_root}_zfs2"
 	elif nodeattr -Q lustre212; then
-		lustre_group="lustre_2.12"
+		lustre_group="${lustre_group_root}_2.12"
 	fi
 
 	echo $lustre_group
