@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 ###########################################################################
 # $URL$
 # $Author$
@@ -7,7 +7,7 @@
 ###########################################################################
 
 MUD_VERSION=mud-0.86
-BASE_YUM_GROUPS="base netroot ldms_v4 $(arch)"
+TOSS_MAJOR_VERSION=$(distro_version --major)
 TUTBIN=/admin/tut/bin/updates
 LOGBASE=/root/lustre-mud
 PDSH="pdsh -t2 -u60"
@@ -16,6 +16,15 @@ PDSH_LONG="pdsh -t2"
 NBD_SIZE="30G"
 #DRYRUN="echo"
 DRYRUN=""
+
+if [[ $TOSS_MAJOR_VERSION -eq 3 ]]; then
+	BASE_YUM_GROUPS="base netroot ldms_v4 $(arch)"
+elif [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+	BASE_YUM_GROUPS="Base"
+else
+	error "Unhandled toss version ${TOSS_MAJOR_VERSION}. Perform the update by hand and get lustre-mud fixed."
+	exit 4
+fi
 
 function usage {
 cat <<END_OF_USAGE
@@ -275,12 +284,10 @@ function update_mgmt_node {
 		fi
 
 		if want_toss_update ${node} ${version} ; then
-			error "$tut on $node did not change toss to ${version}.  Update, run cfagentk, and start pacemaker if necessary."
+			error "$tut on $node did not change toss to ${version}.  Update, run cfagent/ansible, and start pacemaker if necessary."
 			exit 4
 		fi
 
-		log "$funcname: Running cfagent -K on node $node"
-		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
 		if nodeattr $node pacemaker; then
 			log "$funcname: Starting pacemaker on node $node"
 			$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
@@ -582,8 +589,6 @@ function determine_lustre_group {
 		lustre_group="lustre_zfs2"
 	elif nodeattr -Q lustre212; then
 		lustre_group="lustre_2.12"
-	elif nodeattr -Q lustre210; then
-		lustre_group="lustre_2.10"
 	fi
 
 	echo $lustre_group
@@ -1079,7 +1084,7 @@ log "start timestamp $start_timestamp lustre-mud $MUD_VERSION"
 cd /root
 
 # verify links to the repo exist
-repo_rpm="/repo/toss/$(distro_version --major)/current/$(arch)/toss-release-${desired}*.rpm"
+repo_rpm="/repo/toss/${TOSS_MAJOR_VERSION}/current/$(arch)/toss-release-${desired}*.rpm"
 if ! ls $repo_rpm > /dev/null 2>&1 ; then
 	error "main: unable to create image, $repo_rpm does not exist"
 	exit 2
@@ -1088,6 +1093,16 @@ fi
 # make sure we have current configs in place
 log "main: Running cfagent -K on primgmt before starting"
 $DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
+
+if [[ $TOSS_MAJOR_VERSION -eq 3 ]]; then
+	log "$funcname: Running cfagent -K on primgmt"
+	$DRYRUN ${PDSH_LONG} -g primgmt cfagent -K
+elif [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+	for ansible_helper in /sbin/lc-update-etc-ansible /sbin/lc-ansible-pull; do
+		log "$funcname: Running $ansible_helper on cmhost"
+		$DRYRUN ${PDSH_LONG} -g cmhost $ansible_helper
+	done
+fi
 
 # make sure genders specifies a lustre yum group
 check_lustre_group $(determine_lustre_group)
