@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 ###########################################################################
 # $URL$
 # $Author$
@@ -7,7 +7,7 @@
 ###########################################################################
 
 MUD_VERSION=mud-0.86
-BASE_YUM_GROUPS="base netroot ldms_v4 $(arch)"
+TOSS_MAJOR_VERSION=$(distro_version --major)
 TUTBIN=/admin/tut/bin/updates
 LOGBASE=/root/lustre-mud
 PDSH="pdsh -t2 -u60"
@@ -16,6 +16,15 @@ PDSH_LONG="pdsh -t2"
 NBD_SIZE="30G"
 #DRYRUN="echo"
 DRYRUN=""
+
+if [[ $TOSS_MAJOR_VERSION -eq 3 ]]; then
+	BASE_YUM_GROUPS="base netroot ldms_v4 $(arch)"
+elif [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+	BASE_YUM_GROUPS="Base"
+else
+	error "Unhandled toss version ${TOSS_MAJOR_VERSION}. Perform the update by hand and get lustre-mud fixed."
+	exit 4
+fi
 
 function usage {
 cat <<END_OF_USAGE
@@ -135,9 +144,27 @@ fi
 
 #set -x
 
-desired=$(basename $(realpath /repo/toss/3/current) | sed s/toss-release-//)
-desired_kernel=$(ls /repo/toss/3/current/$(arch)/kernel-3*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
+desired=$(basename $(realpath /repo/toss/${TOSS_MAJOR_VERSION}/current) | sed s/toss-release-//)
+desired_kernel=$(ls /repo/toss/${TOSS_MAJOR_VERSION}/current/$(arch)/kernel-[0-9]*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
 use_iscsi=$(nodeattr -q 'mds&&iscsi')
+
+# necessary because under toss4 / lua5.3 hostlist --count returns floats,
+#    $ hostlist --count garterj
+#    1.0
+#
+function hostlist_count {
+	local funcname="hostlist_count"
+	local nodelist=$1
+
+	if [ -z "$nodelist" ]; then
+		error "$funcname: missing argument nodelist"
+		exit 2
+	fi
+
+	local count=$(hostlist --count $nodelist | sed 's/\.[0-9]*//')
+
+	echo $count
+}
 
 function actual_toss_version {
 	local funcname="actual_toss_version"
@@ -253,21 +280,29 @@ function update_mgmt_node {
 
 	# XXX TODO: Possibly detect an intalled toss RC and deal correctly
 
-	log "$funcname: UPDATING node $node to $version"
-	local tut=${TUTBIN}/${version}
 
-	if [ "$(${PDSH} -w ${node} test -x $tut && echo OK)" = "OK" ]; then
+	# Verify the tut update script exists
+	local tut=${TUTBIN}/${version}
+	log "$funcname: checking node $node for update script $tut"
+	found_script=$(${PDSH} -N -w e${node} ls $tut 2>/dev/null)
+	if [[ ! "$found_script" =~ ${TOSS_MAJOR_VERSION}* ]]; then
+		error "$funcname: unable to find tut script on $node, found \"$found_script\""
+		exit 2
+	fi
+
+	if [ "$(${PDSH} -w e${node} test -x $tut && echo OK)" = "OK" ]; then
+		log "$funcname: UPDATING node $node to $version"
 		if nodeattr $node pacemaker; then
-			if [ "$($PDSH -w $node systemctl is-active pacemaker)" != "active" ]; then
+			if [ "$($PDSH -w e$node systemctl is-active pacemaker)" != "active" ]; then
 				log "$funcname: Pacemaker not running on $node for unknown reason. Continuing with update."
 			else
 				# stop pacemaker first as it may be updated
 				log "$funcname: stopping pacemaker during node $node update"
-				$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+				$DRYRUN ${PDSH_LONG} -w e$node pcs cluster kill
 			fi
 		fi
 		log "$funcname: Running tut update script on node $node"
-		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
+		$DRYRUN ${PDSH_LONG} -w e$node bash -x $tut
 		local rc=$?
 		if [ $rc -ne 0 ]; then
 			error "$tut update script failed on node $node."
@@ -275,22 +310,20 @@ function update_mgmt_node {
 		fi
 
 		if want_toss_update ${node} ${version} ; then
-			error "$tut on $node did not change toss to ${version}.  Update, run cfagentk, and start pacemaker if necessary."
+			error "$tut on $node did not change toss to ${version}.  Update, run cfagent/ansible, and start pacemaker if necessary."
 			exit 4
 		fi
 
-		log "$funcname: Running cfagent -K on node $node"
-		$DRYRUN ${PDSH_LONG} -w $node cfagent -K
 		if nodeattr $node pacemaker; then
 			log "$funcname: Starting pacemaker on node $node"
-			$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
+			$DRYRUN ${PDSH_LONG} -w e$node systemctl start pacemaker
 
 			log "$funcname: Waiting for pacemaker to report all Lustre online"
 			wait_for_pacemaker_all_online 360 "tut update completed but pacemaker does not say all lustre resources online.  Fix issue, start pacemaker, and re-run lustre-mud"
 		fi
 
 		log "$funcname: node $node updating IB firmware"
-		$DRYRUN ${PDSH_LONG} -w $node /sbin/ib_burn_fw
+		$DRYRUN ${PDSH_LONG} -w e$node /sbin/ib_burn_fw
 	else
 		error "$tut update script is not executable on node $node."
 		exit 4
@@ -404,7 +437,7 @@ function update_mgmt_nodes {
 
 	altmgmt=$(nodeattr -q altmgmt)
 	if [ -n "$altmgmt" ]; then
-		if [ $(hostlist --count $altmgmt) -gt 1 ]; then
+		if [ $(hostlist_count $altmgmt) -gt 1 ]; then
 			error "unable to correctly handle clusters with >1 altmgmt node.  Exiting."
 			exit 2
 		fi
@@ -576,14 +609,17 @@ function determine_lustre_group {
 	local funcname="determine_lustre_group"
 	local lustre_group="error"
 
+	local lustre_group_root="lustre"
+	if [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+		lustre_group_root="Lustre"
+	fi
+
 	if nodeattr -Q lustre214; then
-		lustre_group="lustre_2.14"
+		lustre_group="${lustre_group_root}_2.14"
 	elif nodeattr -Q "lustre212&&zfs2"; then
-		lustre_group="lustre_zfs2"
+		lustre_group="${lustre_group_root}_zfs2"
 	elif nodeattr -Q lustre212; then
-		lustre_group="lustre_2.12"
-	elif nodeattr -Q lustre210; then
-		lustre_group="lustre_2.10"
+		lustre_group="${lustre_group_root}_2.12"
 	fi
 
 	echo $lustre_group
@@ -685,7 +721,7 @@ function wait_for_lustre_started {
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
 		local lustre_with_targets=$($PDSH -w e${hostlist} 'df -h -t lustre | xargs --no-run-if-empty' | wc -l)
-		if [ $lustre_with_targets -eq $(hostlist -c $hostlist) ]; then
+		if [ $lustre_with_targets -eq $(hostlist_count $hostlist) ]; then
 			targets_mounted="yes"
 			break
 		fi
@@ -723,7 +759,7 @@ function wait_for_zpools_imported {
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
 		local nodes_with_online=$($PDSH -w e${hostlist} 'zpool list | grep ONLINE | xargs --no-run-if-empty' | wc -l)
-		if [ $nodes_with_online -eq $(hostlist -c $hostlist) ]; then
+		if [ $nodes_with_online -eq $(hostlist_count $hostlist) ]; then
 			pools_imported="yes"
 			break
 		fi
@@ -965,7 +1001,7 @@ function update_lustre_nodes {
 	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
 
-	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
+	if [ $desired_version_count != $(hostlist_count $nodelist) ]; then
 		error "${funcname}: rebooted nodes $nodelist are not all $desired_toss.  Fix the issue then re-run lustre-mud"
 		exit 2
 	fi
@@ -1079,15 +1115,22 @@ log "start timestamp $start_timestamp lustre-mud $MUD_VERSION"
 cd /root
 
 # verify links to the repo exist
-repo_rpm="/repo/toss/$(distro_version --major)/current/$(arch)/toss-release-${desired}*.rpm"
+repo_rpm="/repo/toss/${TOSS_MAJOR_VERSION}/current/$(arch)/toss-release-${desired}*.rpm"
 if ! ls $repo_rpm > /dev/null 2>&1 ; then
 	error "main: unable to create image, $repo_rpm does not exist"
 	exit 2
 fi
 
 # make sure we have current configs in place
-log "main: Running cfagent -K on primgmt before starting"
-$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
+if [[ $TOSS_MAJOR_VERSION -eq 3 ]]; then
+	log "$funcname: Running cfagent -K on mgmt nodes"
+	$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
+elif [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+	for ansible_helper in /sbin/lc-update-etc-ansible /sbin/lc-ansible-pull; do
+		log "$funcname: Running $ansible_helper on mgmt nodes"
+		$DRYRUN ${PDSH_LONG} -g mgmt $ansible_helper
+	done
+fi
 
 # make sure genders specifies a lustre yum group
 check_lustre_group $(determine_lustre_group)
