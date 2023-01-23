@@ -1091,9 +1091,6 @@ if ! ls $repo_rpm > /dev/null 2>&1 ; then
 fi
 
 # make sure we have current configs in place
-log "main: Running cfagent -K on primgmt before starting"
-$DRYRUN ${PDSH_LONG} -g mgmt cfagent -K
-
 if [[ $TOSS_MAJOR_VERSION -eq 3 ]]; then
 	log "$funcname: Running cfagent -K on primgmt"
 	$DRYRUN ${PDSH_LONG} -g primgmt cfagent -K
