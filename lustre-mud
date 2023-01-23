@@ -280,10 +280,18 @@ function update_mgmt_node {
 
 	# XXX TODO: Possibly detect an intalled toss RC and deal correctly
 
-	log "$funcname: UPDATING node $node to $version"
+
+	# Verify the tut update script exists
 	local tut=${TUTBIN}/${version}
+	log "$funcname: checking node $node to for update script $tut"
+	found_script=$(${PDSH} -w ${node} ls $tut)
+	if [[ "$found_script" != ${TOSS_MAJOR_VERSION}* ]]; then
+		error "$funcname: unable to find tut script on $node, found \"$found_script\""
+		exit 2
+	fi
 
 	if [ "$(${PDSH} -w ${node} test -x $tut && echo OK)" = "OK" ]; then
+		log "$funcname: UPDATING node $node to $version"
 		if nodeattr $node pacemaker; then
 			if [ "$($PDSH -w $node systemctl is-active pacemaker)" != "active" ]; then
 				log "$funcname: Pacemaker not running on $node for unknown reason. Continuing with update."
