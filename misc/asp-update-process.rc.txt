@@ -1,0 +1,74 @@
+
+set -x
+set -e
+
+image_name=lustre4
+lustre=lustre_2.12_zfs_2
+tut_base="3.7-11"
+version="3.7-11rc2"
+block_dev_size="-b 30g"
+
+# tut lives in /admin/tut/bin/updates
+
+# Reference is most recent update doc in /usr/admin/docs
+#less /usr/admin/docs/toss3.3-1_update 
+# Below are based on update doc
+
+# follow instructions to update firmware if necessary
+
+# make sure we have current configs in place
+cfagent -K
+
+# stop pacemaker so we can reboot primgmt node
+pcs cluster kill
+
+##
+## Setup to pick up RCs
+##
+if /bin/true; then
+    yum clean all
+    # disable the existing "current" toss repos
+    for xx in /etc/yum.repos.d/*
+    do
+        test -f $xx && sed --in-place 's/enabled=1/enabled=0/' $xx
+    done
+
+
+    # set up yum.repos.d to know about the release candidate
+    grep -A1 ${version} /repo/toss/toss.local.repo | sed 's/^--$/ /' | tee /etc/yum.repos.d/toss-rc.repo
+    yum-config-manager --enable ${version}
+    yum-config-manager --enable ${version}-${lustre}
+    yum clean all
+fi
+
+# create the image
+create_yum_image -i ${image_name} base netroot ldms_v4 x86_64 ${lustre} ${block_dev_size} &&  /tftpboot/scripts/activate_iscsi -i ${image_name} && echo "IMAGE READY"
+
+exit
+
+## create a tut script named after version we are updating mgmt node to, run it
+#cd /root/update/tut/
+#cp /admin/tut/bin/updates/${tut_base} ${version}
+#./${version} 
+#
+#
+#pdsh -f 128 -Av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware || echo "not updating IB firmware - no hosts up."
+#pdsh -f 128 -Av /sbin/ib_burn_fw  || echo "not updating IB firmware - no hosts up."
+#pdsh -f 128 -Av -X cfhost umount /usr/share/ib_firmware || echo "not updating IB firmware - no hosts up."
+
+#echo ================================================
+#echo MGMT NODE STATE:
+#echo DISTRO_VERSION
+#distro_version
+#echo DISTRO_DIFF -i
+#distro_diff -i
+#echo DISTRO_DIFF
+#distro_diff
+#echo ================================================
+#
+#echo ================================================
+#echo EXITING EARLY - VERIFY MGMT AND IMAGE CONTENTS
+#echo THEN REBOOT MGMT NODE
+#echo THEN FOLLOW STEPS BELOW
+#echo ================================================
+#exit

@@ -1,0 +1,31 @@
+
+set -x
+
+# prep
+#gpgcheck=" --nogpgcheck"
+#imgname="olaf"
+imgname="lflood"
+tossver="4.4-6rc7"
+lustre_repo="lustre_2.15"
+lustre_group="Lustre_2.15"
+export yum_options="--disablerepo=* --enablerepo=${tossver} --enablerepo=${tossver}-${lustre_repo} ${gpgcheck}"
+
+# create image
+create_yum_image -i ${imgname} -y /repo/toss/toss4.local.repo -v ${tossver} Base ${lustre_group} -b25G
+
+# verify image
+mkdir -p /mnt/olaf
+mount -o loop /tftpboot/images/${imgname}-${tossver}-*.x86_64.img /mnt/olaf
+rpm --root /mnt/olaf -q kernel kmod-zfs kmod-lustre
+echo
+chroot /mnt/olaf distro_version
+echo
+chroot /mnt/olaf distro_diff -i
+echo
+chroot /mnt/olaf distro_diff
+umount /mnt/olaf
+
+#df -h /mnt/olaf
+
+# activate image
+#/tftpboot/scripts/activate_iscsi -i ${imgname}
