@@ -148,6 +148,24 @@ desired=$(basename $(realpath /repo/toss/${TOSS_MAJOR_VERSION}/current) | sed s/
 desired_kernel=$(ls /repo/toss/${TOSS_MAJOR_VERSION}/current/$(arch)/kernel-[0-9]*rpm | tail -n1 | xargs basename | sed s/kernel-// | sed s/.rpm//)
 use_iscsi=$(nodeattr -q 'mds&&iscsi')
 
+# necessary because under toss4 / lua5.3 hostlist --count returns floats,
+#    $ hostlist --count garterj
+#    1.0
+#
+function hostlist_count {
+	local funcname="hostlist_count"
+	local nodelist=$1
+
+	if [ -z "$nodelist" ]; then
+		error "$funcname: missing argument nodelist"
+		exit 2
+	fi
+
+	local count=$(hostlist --count $nodelist | sed 's/\.[0-9]*//')
+
+	echo $count
+}
+
 function actual_toss_version {
 	local funcname="actual_toss_version"
 	local node=$1
@@ -411,7 +429,7 @@ function update_mgmt_nodes {
 
 	altmgmt=$(nodeattr -q altmgmt)
 	if [ -n "$altmgmt" ]; then
-		if [ $(hostlist --count $altmgmt) -gt 1 ]; then
+		if [ $(hostlist_count $altmgmt) -gt 1 ]; then
 			error "unable to correctly handle clusters with >1 altmgmt node.  Exiting."
 			exit 2
 		fi
@@ -690,7 +708,7 @@ function wait_for_lustre_started {
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
 		local lustre_with_targets=$($PDSH -w e${hostlist} 'df -h -t lustre | xargs --no-run-if-empty' | wc -l)
-		if [ $lustre_with_targets -eq $(hostlist -c $hostlist) ]; then
+		if [ $lustre_with_targets -eq $(hostlist_count $hostlist) ]; then
 			targets_mounted="yes"
 			break
 		fi
@@ -728,7 +746,7 @@ function wait_for_zpools_imported {
 	while [ $(date +%s) -lt $end ]; do
 		sleep 1
 		local nodes_with_online=$($PDSH -w e${hostlist} 'zpool list | grep ONLINE | xargs --no-run-if-empty' | wc -l)
-		if [ $nodes_with_online -eq $(hostlist -c $hostlist) ]; then
+		if [ $nodes_with_online -eq $(hostlist_count $hostlist) ]; then
 			pools_imported="yes"
 			break
 		fi
@@ -970,7 +988,7 @@ function update_lustre_nodes {
 	local desired_version_count=$($PDSH -w e${nodelist} distro_version | grep -w -c $desired_toss)
 	local badnode_count=$($PDSH -w e${nodelist} ls /etc/badnode 2>/dev/null | wc -l)
 
-	if [ $desired_version_count != $(hostlist -c $nodelist) ]; then
+	if [ $desired_version_count != $(hostlist_count $nodelist) ]; then
 		error "${funcname}: rebooted nodes $nodelist are not all $desired_toss.  Fix the issue then re-run lustre-mud"
 		exit 2
 	fi
