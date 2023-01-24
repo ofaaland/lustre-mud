@@ -284,25 +284,25 @@ function update_mgmt_node {
 	# Verify the tut update script exists
 	local tut=${TUTBIN}/${version}
 	log "$funcname: checking node $node for update script $tut"
-	found_script=$(${PDSH} -w ${node} ls $tut)
+	found_script=$(${PDSH} -w e${node} ls $tut)
 	if [[ "$found_script" != ${TOSS_MAJOR_VERSION}* ]]; then
 		error "$funcname: unable to find tut script on $node, found \"$found_script\""
 		exit 2
 	fi
 
-	if [ "$(${PDSH} -w ${node} test -x $tut && echo OK)" = "OK" ]; then
+	if [ "$(${PDSH} -w e${node} test -x $tut && echo OK)" = "OK" ]; then
 		log "$funcname: UPDATING node $node to $version"
 		if nodeattr $node pacemaker; then
-			if [ "$($PDSH -w $node systemctl is-active pacemaker)" != "active" ]; then
+			if [ "$($PDSH -w e$node systemctl is-active pacemaker)" != "active" ]; then
 				log "$funcname: Pacemaker not running on $node for unknown reason. Continuing with update."
 			else
 				# stop pacemaker first as it may be updated
 				log "$funcname: stopping pacemaker during node $node update"
-				$DRYRUN ${PDSH_LONG} -w $node pcs cluster kill
+				$DRYRUN ${PDSH_LONG} -w e$node pcs cluster kill
 			fi
 		fi
 		log "$funcname: Running tut update script on node $node"
-		$DRYRUN ${PDSH_LONG} -w $node bash -x $tut
+		$DRYRUN ${PDSH_LONG} -w e$node bash -x $tut
 		local rc=$?
 		if [ $rc -ne 0 ]; then
 			error "$tut update script failed on node $node."
@@ -316,14 +316,14 @@ function update_mgmt_node {
 
 		if nodeattr $node pacemaker; then
 			log "$funcname: Starting pacemaker on node $node"
-			$DRYRUN ${PDSH_LONG} -w $node systemctl start pacemaker
+			$DRYRUN ${PDSH_LONG} -w e$node systemctl start pacemaker
 
 			log "$funcname: Waiting for pacemaker to report all Lustre online"
 			wait_for_pacemaker_all_online 360 "tut update completed but pacemaker does not say all lustre resources online.  Fix issue, start pacemaker, and re-run lustre-mud"
 		fi
 
 		log "$funcname: node $node updating IB firmware"
-		$DRYRUN ${PDSH_LONG} -w $node /sbin/ib_burn_fw
+		$DRYRUN ${PDSH_LONG} -w e$node /sbin/ib_burn_fw
 	else
 		error "$tut update script is not executable on node $node."
 		exit 4
