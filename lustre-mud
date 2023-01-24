@@ -283,7 +283,7 @@ function update_mgmt_node {
 
 	# Verify the tut update script exists
 	local tut=${TUTBIN}/${version}
-	log "$funcname: checking node $node to for update script $tut"
+	log "$funcname: checking node $node for update script $tut"
 	found_script=$(${PDSH} -w ${node} ls $tut)
 	if [[ "$found_script" != ${TOSS_MAJOR_VERSION}* ]]; then
 		error "$funcname: unable to find tut script on $node, found \"$found_script\""
