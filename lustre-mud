@@ -330,7 +330,7 @@ function update_mgmt_node {
 			$DRYRUN pdsh ${PDSH_LONG} -w "e$node" systemctl start pacemaker
 
 			log "$funcname: Waiting for pacemaker to report all Lustre online"
-			wait_for_pacemaker_all_online 360 "tut update completed but pacemaker does not say all lustre resources online.  Fix issue, start pacemaker, and re-run lustre-mud"
+			wait_for_pacemaker_all_online 720 "tut update completed but pacemaker does not say all lustre resources online.  Fix issue, start pacemaker, and re-run lustre-mud"
 		fi
 
 		log "$funcname: node $node updating IB firmware"
@@ -480,7 +480,7 @@ function update_mgmt_nodes {
 				old_kernel=$(running_kernel "${node}")
 				echo "$node: $gender reboot from $old_kernel to $desired_kernel"
 				reboot_node "$node"
-				wait_for_hostlist_up "$node" 600
+				wait_for_hostlist_up "$node" 1200
 			else
 				log "$funcname: $node: $gender no reboot reqd, already running kernel $desired_kernel"
 			fi
@@ -1084,7 +1084,7 @@ function update_lustre_nodes {
 
 	log "${funcname}: waiting for lustre servers to boot"
 	sleep 180
-	wait_for_hostlist_up "$nodelist" 900
+	wait_for_hostlist_up "$nodelist" 1800
 
 	log "${funcname}: all lustre servers booted.  Checking for wrong TOSS version or badnode file"
 	local -r desired_version_count=$(pdsh ${PDSH_SHORT} -w "e${nodelist}" distro_version | grep -w -c "$desired_toss")
@@ -1107,7 +1107,7 @@ function update_lustre_nodes {
 	# shellcheck disable=SC2016
 	$DRYRUN pdsh ${PDSH_LONG} -w "e${nodelist}" 'zpool import $(hostname)'
 	log "${funcname}: zpool import commands returned on all nodes"
-	wait_for_zpools_imported "${nodelist}" 120
+	wait_for_zpools_imported "${nodelist}" 240
 
 	log "${funcname}: starting pacemaker"
 	$DRYRUN systemctl start pacemaker
@@ -1152,7 +1152,7 @@ function bounce_sample_node {
 	log "$funcname: putting node $sample_node into standby"
 	$DRYRUN pcs node standby "$sample_node"
 	log "$funcname: waiting for node $sample_node to export pools"
-	$DRYRUN wait_for_zpools_exported "$sample_node" 300
+	$DRYRUN wait_for_zpools_exported "$sample_node" 600
 	log "$funcname: fencing node $sample_node"
 	$DRYRUN pcs stonith fence "$sample_node"
 	# XXX TODO make below more robust
@@ -1160,7 +1160,7 @@ function bounce_sample_node {
 	# power the node back on in case it was powered off instead of rebooted by stonith
 	log "$funcname: waiting for node $sample_node to come back up"
 	$DRYRUN pm -1 "$sample_node"
-	wait_for_hostlist_up "$sample_node" 480
+	wait_for_hostlist_up "$sample_node" 960
 
 	if ! lustre_node_ready "$sample_node" "$desired_toss"; then
 		error "$funcname: sample node $sample_node update failed, proceed manually"
@@ -1169,10 +1169,10 @@ function bounce_sample_node {
 
 	log "$funcname: taking node $sample_node out of standby"
 	$DRYRUN pcs node unstandby "$sample_node"
-	wait_for_zpools_imported "$sample_node" 300
+	wait_for_zpools_imported "$sample_node" 600
 	log "$funcname: zpool imported on $sample_node successfully"
 
-	wait_for_lustre_started "$sample_node" 120
+	wait_for_lustre_started "$sample_node" 240
 	log "$funcname: Lustre target started on $sample_node successfully"
 }
 
@@ -1264,7 +1264,7 @@ else
 	log "lustre servers already running toss $desired"
 fi
 
-wait_for_pacemaker_all_online 360 "Update completed but Pacemaker not running or not all resources online.  Fix the issues and verify the update was successful."
+wait_for_pacemaker_all_online 720 "Update completed but Pacemaker not running or not all resources online.  Fix the issues and verify the update was successful."
 
 # verify that everything was updated
 nodelist=$(lustre_nodes_needing_update "$desired")
