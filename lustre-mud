@@ -1097,7 +1097,7 @@ function update_lustre_nodes {
 	fi
 
 	if [ "$badnode_count" != 0 ]; then
-		error "${funcname}: some rebooted nodes in $nodelist have badnode.  Fix the issue then re-run lustre-mud"
+		error "${funcname}: $badnode_count nodes in $nodelist have /etc/badnode.  Fix then re-run lustre-mud"
 		exit 2
 	fi
 
