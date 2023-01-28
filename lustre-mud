@@ -6,7 +6,7 @@
 # $Rev$
 ###########################################################################
 
-MUD_VERSION=mud-0.88
+MUD_VERSION=mud-0.89
 TOSS_MAJOR_VERSION=$(distro_version --major)
 TUTBIN=/admin/tut/bin/updates
 LOGBASE=/root/lustre-mud
