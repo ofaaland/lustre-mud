@@ -1211,8 +1211,8 @@ cd /root
 
 # verify links to the repo exist
 repo_rpmdir="/repo/toss/${TOSS_MAJOR_VERSION}/current/$(arch)/"
-if ! find "$repo_rpmdir" -name "$toss-release-${desired}*.rpm"; then
-	error "main: unable to create image, $repo_rpm does not exist"
+if ! find "$repo_rpmdir" -name "toss-release-${desired}*.rpm"; then
+	error "main: unable to create image, $repo_rpmdir/toss-release-${desired}*.rpm does not exist"
 	exit 2
 fi
 
