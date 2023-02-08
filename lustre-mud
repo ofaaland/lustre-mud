@@ -303,7 +303,7 @@ function update_mgmt_node {
 	if [ "$tut_usable" = "OK" ]; then
 		log "$funcname: UPDATING node $node to $version"
 		if nodeattr "$node" pacemaker; then
-			local -r pacemaker_is_active=$(pdsh ${PDSH_SHORT} -w "e$node" systemctl is-active pacemaker)
+			local -r pacemaker_is_active=$(pdsh ${PDSH_SHORT} -N -w "e$node" systemctl is-active pacemaker)
 			if [ "$pacemaker_is_active" != "active" ]; then
 				log "$funcname: Pacemaker not running on $node for unknown reason. Continuing with update."
 			else
