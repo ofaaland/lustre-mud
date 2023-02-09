@@ -362,6 +362,10 @@ function reboot_node {
 		$DRYRUN pdsh ${PDSH_SHORT} -w "e${node}" $DRYRUN umount -a -l -t nfs
 	fi
 	$DRYRUN pdsh ${PDSH_SHORT} -w "e${node}" reboot
+
+	# give node time to go down and for whatsup to notice it
+	sleep 60
+
 	# XXX TODO: detect if reboot did not occur and exit
 }
 
