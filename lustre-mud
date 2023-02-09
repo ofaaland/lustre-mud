@@ -822,7 +822,10 @@ function wait_for_zpools_imported {
 	done
 
 	if [ "$pools_imported" != "yes" ]; then
-		error "pools not imported from $hostlist after $timeout seconds"
+		local -r imported_pools=$(pdsh ${PDSH_SHORT} -N -w "e${hostlist}" zpool list | awk '/ONLINE/ || /DEGRADED/ {print $1}' | sort --sort=version | hostlist)
+		error "$funcname: some pools not imported after $timeout seconds."
+		error "$funcname: waiting for pools on $hostlist"
+		error "$funcname: imported pools are $imported_pools"
 		exit 2
 	fi
 	log "$funcname: confirmed nodes $hostlist have their pools imported"
