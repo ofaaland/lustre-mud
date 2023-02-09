@@ -813,7 +813,7 @@ function wait_for_zpools_imported {
 	local host_count
 	while [ "$(date +%s)" -lt "$end" ]; do
 		sleep 1
-		nodes_with_online=$(pdsh ${PDSH_SHORT} -w "e${hostlist}" 'zpool list | grep ONLINE | xargs --no-run-if-empty' | wc -l)
+		nodes_with_online=$(pdsh ${PDSH_SHORT} -w "e${hostlist}" 'zpool list | grep -e DEGRADED -e ONLINE | xargs --no-run-if-empty' | wc -l)
 		host_count=$(hostlist_count "$hostlist")
 		if [ "$nodes_with_online" -eq "$host_count" ]; then
 			pools_imported="yes"
