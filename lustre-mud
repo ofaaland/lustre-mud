@@ -8,6 +8,7 @@
 
 MUD_VERSION=mud-0.90
 TOSS_MAJOR_VERSION=$(distro_version --major)
+TOSS_VERSION=$(distro_version --major --minor --release | sed 's/ /./; s/ /-/')
 TUTBIN=/admin/tut/bin/updates
 LOGBASE=/root/lustre-mud
 PDSH_SHORT="-u60"    # 60 second limit for cmd to complete
@@ -740,9 +741,17 @@ function create_image {
 function update_firmware {
 	local funcname="update_firmware"
 	log "$funcname: updating firmware with ib_burn_fw"
-	$DRYRUN pdsh ${PDSH_SHORT}  -f 128 -av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
-	$DRYRUN pdsh ${PDSH_MEDIUM} -f 128 -av /sbin/ib_burn_fw
-	$DRYRUN pdsh ${PDSH_SHORT}  -f 128 -av -X cfhost umount /usr/share/ib_firmware
+	if [[ $TOSS_MAJOR_VERSION -eq 4 ]]; then
+		FW_TEMP_DIR="/root/ib_fw_${TOSS_VERSION}"
+		$DRYRUN pdcp ${PDSH_SHORT}  -f 128 -av mkdir -p $FW_TEMP_DIR
+		$DRYRUN pdcp ${PDSH_SHORT}  -f 128 -av /repo/toss/4/toss-release-${TOSS_VERSION}/x86_64/{mlxup-4.*.t4.x86_64.rpm,ib_firmware-4.*.t4.noarch.rpm} ${FW_TEMP_DIR}
+		$DRYRUN pdsh ${PDSH_SHORT}  -f 128 -av 'rpm -Uvh --force ${FW_TEMP_DIR}/{mlxup-4.*.t4.x86_64.rpm,ib_firmware-4.*.t4.noarch.rpm}'
+		$DRYRUN pdsh ${PDSH_MEDIUM} -f 128 -av /sbin/ib_burn_fw
+	else
+		$DRYRUN pdsh ${PDSH_SHORT}  -f 128 -av -X cfhost mount cfhost:/usr/share/ib_firmware /usr/share/ib_firmware
+		$DRYRUN pdsh ${PDSH_MEDIUM} -f 128 -av /sbin/ib_burn_fw
+		$DRYRUN pdsh ${PDSH_SHORT}  -f 128 -av -X cfhost umount /usr/share/ib_firmware
+	fi
 }
 
 # Wait until the specified host(s) have a lustre target mounted
