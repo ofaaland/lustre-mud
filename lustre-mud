@@ -6,7 +6,7 @@
 # $Rev$
 ###########################################################################
 
-MUD_VERSION=mud-0.90
+MUD_VERSION=mud-0.91
 TOSS_MAJOR_VERSION=$(distro_version --major)
 TOSS_VERSION=$(distro_version --major --minor --release | sed 's/ /./; s/ /-/')
 TUTBIN=/admin/tut/bin/updates
